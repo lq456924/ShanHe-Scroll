@@ -161,6 +161,20 @@ public class AdminController {
         return ApiResponse.ok("用户已解封");
     }
 
+    /** 删除用户（永久，不可恢复） */
+    @DeleteMapping("/users/{id}")
+    public ApiResponse<String> deleteUser(@PathVariable Long id,
+                                          Authentication authentication) {
+        requireAdmin(authentication);
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        if (user.getRole() != null && user.getRole() >= 2) {
+            throw new RuntimeException("不能删除管理员");
+        }
+        userRepository.delete(user);
+        return ApiResponse.ok("用户已删除");
+    }
+
     // ==================== 权限校验 ====================
 
     /** 审核员及以上：role >= 1 */

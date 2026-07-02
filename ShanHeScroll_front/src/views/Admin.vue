@@ -74,6 +74,15 @@ async function handleBan(user: any) {
   } catch (err: any) { alert(err.message) }
 }
 
+async function handleDeleteUser(user: any) {
+  if (!confirm(`⚠️ 确定永久删除「${user.username}」吗？\n\n此操作不可恢复！将同时删除该用户的所有相册、漂流瓶等数据。`)) return
+  if (!confirm(`再次确认：真的要删除「${user.username}」吗？`)) return
+  try {
+    await api.deleteUser(user.id)
+    await loadUsers()
+  } catch (err: any) { alert(err.message) }
+}
+
 // ---- 漂流瓶审核 ----
 const pendingBottles = ref<any[]>([])
 const bottlesLoading = ref(false)
@@ -139,7 +148,7 @@ function switchTab(t: typeof tab.value) {
         <table class="data-table">
           <thead><tr>
             <th>ID</th><th>用户名</th><th>昵称</th><th>邮箱</th><th>角色</th><th>状态</th>
-            <th v-if="role >= 2">操作</th>
+            <th v-if="role >= 2" style="width:200px">操作</th>
           </tr></thead>
           <tbody>
             <tr v-for="u in filteredUsers" :key="u.id" :class="{ banned: u.status === 1 }">
@@ -152,6 +161,7 @@ function switchTab(t: typeof tab.value) {
               <td v-if="role >= 2">
                 <button class="btn-sm" @click="handleResetPwd(u)">改密</button>
                 <button :class="u.status===1?'btn-sm-ok':'btn-sm-danger'" @click="handleBan(u)">{{ u.status===1?'解封':'封禁' }}</button>
+                <button v-if="u.role < 2" class="btn-sm-delete" @click="handleDeleteUser(u)">删除</button>
               </td>
             </tr>
           </tbody>
@@ -283,6 +293,9 @@ function switchTab(t: typeof tab.value) {
 .btn-sm { padding: 4px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #667eea; font-size: 12px; cursor: pointer; margin-right: 6px; }
 .btn-sm-danger { padding: 4px 12px; border: none; border-radius: 6px; background: #fee; color: #e74c3c; font-size: 12px; cursor: pointer; }
 .btn-sm-ok { padding: 4px 12px; border: none; border-radius: 6px; background: #e8f8e8; color: #27ae60; font-size: 12px; cursor: pointer; }
+
+.btn-sm-delete { padding: 4px 12px; border: none; border-radius: 6px; background: #fff0f0; color: #e74c3c; font-size: 12px; cursor: pointer; margin-left: 6px; }
+.btn-sm-delete:hover { background: #ffe0e0; }
 
 .empty { text-align: center; color: #aaa; padding: 40px 0; font-size: 14px; }
 

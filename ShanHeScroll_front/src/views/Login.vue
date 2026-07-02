@@ -26,7 +26,7 @@ async function handleLogin() {
     const res = await login(account.value.trim(), password.value)
     localStorage.setItem('token', res.token)
     localStorage.setItem('user', JSON.stringify(res.user))
-    router.replace(res.user.role >= 1 ? '/admin' : '/')
+    router.replace('/')
   } catch (err: any) {
     errorMsg.value = err.message || '登录失败'
   } finally {

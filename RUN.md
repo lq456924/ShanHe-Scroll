@@ -131,3 +131,12 @@ ShanHeScroll/
     │   └── router/               ← 路由
     └── API.md                    ← 前端 API 参考
 ```
+//
+前端打包
+cd ShanHeScroll_front
+npm run build
+产出 dist/ 文件夹
+后端
+cd ShanHeScroll_backend
+./mvnw package -DskipTests
+产出 target/demo-0.0.1-SNAPSHOT.jar

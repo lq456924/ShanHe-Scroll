@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { getMyAlbums, createAlbum, getAlbumDetail, addPhoto, updatePhotoDesc, deletePhoto, deleteAlbum, type Album } from '@/api/album'
 import { loadRegionData, groupByProvince, getCityName, getProvinces, getCitiesByProvince, getProvinceByCityId } from '@/utils/regions'
+import { thumbUrl } from '@/utils/thumb'
 import http, { extractData } from '@/api'
 
 const route = useRoute()
@@ -21,7 +22,13 @@ let provinceIdToAdcode = new Map<number, string>()
 let citiesMap = new Map<string, any>() // adcode → city region
 const mapLevel = ref<'china' | number>('china')
 const mapBreadcrumb = ref<{ name: string; id: number | 'china' }[]>([])
-const mapSelectedCity = ref<string | null>(null) // city name for filtering
+const mapFilterProvince = ref<string | null>(null) // 省份名筛选
+const mapSelectedCity = ref<string | null>(null) // 城市名筛选
+
+function getCitiesByProvinceName(provinceName: string) {
+  const prov = getProvinces().find(p => p.name === provinceName || normalizeName(p.name) === normalizeName(provinceName))
+  return prov ? getCitiesByProvince(prov.id) : []
+}
 
 // 计算有相册的城市 ID 集合
 const albumCityIds = computed(() => {
@@ -34,8 +41,15 @@ const albumCityIds = computed(() => {
 
 // 筛选后的相册（地图模式按城市筛选）
 const filteredAlbums = computed(() => {
-  if (!mapSelectedCity.value) return albums.value
-  return albums.value.filter(a => getCityName(a.regionId || 0) === mapSelectedCity.value || getCityName(a.regionId || 0) === mapSelectedCity.value.replace(/市$/, ''))
+  if (mapSelectedCity.value) {
+    return albums.value.filter(a => getCityName(a.regionId || 0) === mapSelectedCity.value || getCityName(a.regionId || 0) === mapSelectedCity.value!.replace(/市$/, ''))
+  }
+  if (mapFilterProvince.value) {
+    const provCities = getCitiesByProvinceName(mapFilterProvince.value)
+    const cityIds = new Set(provCities.map(c => c.id))
+    return albums.value.filter(a => a.regionId && cityIds.has(a.regionId))
+  }
+  return albums.value
 })
 
 const grouped = ref<{ province: string; items: Album[] }[]>([])
@@ -482,6 +496,7 @@ async function onAlbumMapClick(params: any) {
   if (!params.name || !mapChart) return
 
   if (mapLevel.value === 'china') {
+    // 点击省份 → 下钻 + 筛选该省所有相册
     const geo = geoJsonCache.get('100000')
     let pid: number | undefined
     if (provincesMap.has(params.name)) pid = provincesMap.get(params.name).id
@@ -492,10 +507,13 @@ async function onAlbumMapClick(params: any) {
     }
     if (!pid) return
 
+    // 筛选该省份
+    mapFilterProvince.value = params.name
+    mapSelectedCity.value = null
+
     mapLevel.value = pid
     mapBreadcrumb.value = [{ name: '全国', id: 'china' }, { name: params.name, id: pid }]
 
-    // 动画放大
     for (const feat of geo.features) {
       if (feat.properties.name === params.name) {
         const center = getFeatureCenter(feat)
@@ -505,22 +523,22 @@ async function onAlbumMapClick(params: any) {
     }
     await new Promise(r => setTimeout(r, 600))
     await renderAlbumProvince(pid)
+    await loadAlbums()
   } else {
-    // 点击城市 → 筛选
-    const adcode = [...citiesMap.keys()].find(k => {
-      const feat = geoJsonCache.get(`province_${provinceIdToAdcode.get(mapLevel.value as number)}`)?.features
-      return feat?.find((f: any) => f.properties.adcode === k && f.properties.name === params.name)
-    })
+    // 点击城市 → 进一步筛选
     const cityName = params.name
     mapSelectedCity.value = cityName === mapSelectedCity.value ? null : cityName
+    mapFilterProvince.value = null
     await loadAlbums()
   }
 }
 
 async function goAlbumMapLevel(item: { name: string; id: number | 'china' }) {
   if (item.id === 'china') {
+    mapFilterProvince.value = null
     mapSelectedCity.value = null
     await renderAlbumChina()
+    await loadAlbums()
   } else {
     mapLevel.value = item.id as number
     mapBreadcrumb.value = mapBreadcrumb.value.filter(b => b.id !== 'china' && (b.id as number) <= (item.id as number))
@@ -548,6 +566,7 @@ watch(mapMode, async (val) => {
 })
 
 async function clearFilter() {
+  mapFilterProvince.value = null
   mapSelectedCity.value = null
   await renderAlbumChina()
   await loadAlbums()
@@ -555,6 +574,7 @@ async function clearFilter() {
 
 function switchListMode() {
   mapMode.value = false
+  mapFilterProvince.value = null
   mapSelectedCity.value = null
   if (mapChart) { mapChart.dispose(); mapChart = null }
   loadAlbums()
@@ -596,6 +616,10 @@ async function handleCreate() {
   createError.value = ''
   if (!createForm.value.title.trim()) {
     createError.value = '请输入相册标题'
+    return
+  }
+  if (!createForm.value.regionId) {
+    createError.value = '请选择地点'
     return
   }
   createLoading.value = true
@@ -643,8 +667,8 @@ async function handleCreate() {
           <div v-if="mapLoading" class="map-loading">加载中...</div>
           <div ref="mapChartRef" class="map-chart"></div>
         </div>
-        <p v-if="mapSelectedCity" class="map-filter-hint">
-          当前筛选：{{ mapSelectedCity }}（{{ filteredAlbums.length }} 个相册）
+        <p v-if="mapFilterProvince || mapSelectedCity" class="map-filter-hint">
+          当前筛选：{{ mapSelectedCity || mapFilterProvince }}（{{ filteredAlbums.length }} 个相册）
           <span class="clear-filter" @click="clearFilter()">✕ 清除</span>
         </p>
       </div>
@@ -663,12 +687,12 @@ async function handleCreate() {
               @click="openDetail(album)"
             >
               <div class="card-cover">
-                <img v-if="album.coverImage" :src="album.coverImage" alt="" />
+                <img v-if="album.coverImage" :src="thumbUrl(album.coverImage)" @error="(e) => (e.target as HTMLImageElement).src = album.coverImage!" alt="" />
                 <span v-else class="no-cover">📷</span>
               </div>
               <div class="card-body">
                 <button class="card-delete-btn" title="删除相册" @click="handleDeleteAlbum(album, $event)">🗑</button>
-                <div class="card-title">{{ album.title }} <span class="card-id">#{{ album.id }}</span></div>
+                <div class="card-title">{{ album.title }}</div>
                 <div class="card-meta">
                   <span v-if="album.regionId">{{ getCityName(album.regionId) }}</span>
                   <span>{{ album.photoCount || 0 }} 张照片</span>
@@ -693,7 +717,7 @@ async function handleCreate() {
       <div class="modal-card">
         <h3>创建相册</h3>
         <div class="field">
-          <label>相册标题 *</label>
+          <label>相册标题 <span class="req">*</span></label>
           <input v-model="createForm.title" maxlength="100" placeholder="如：北京之旅" />
         </div>
         <div class="field">
@@ -701,7 +725,7 @@ async function handleCreate() {
           <textarea v-model="createForm.description" rows="2" maxlength="200" placeholder="简单描述一下这次旅行..."></textarea>
         </div>
         <div class="field">
-          <label>地点</label>
+          <label>地点 <span class="req">*</span></label>
           <div class="location-row">
             <select v-model="selProvinceId" @change="onProvinceChange(selProvinceId)">
               <option value="">选择省份</option>
@@ -740,7 +764,7 @@ async function handleCreate() {
     <div v-if="showDetail" class="modal-overlay" @click.self="showDetail = false">
       <div class="detail-card" v-if="detailAlbum">
         <div class="detail-header">
-          <h2>{{ detailAlbum.title }}</h2>
+          <h2>{{ detailAlbum.title }} <span class="detail-id">#{{ detailAlbum.id }}</span></h2>
           <div class="header-actions">
             <button v-if="!selectMode && !addingPhoto" class="add-photo-btn-sm" @click="triggerPhotoUpload">+ 照片</button>
             <button v-if="!addingPhoto" :class="['add-photo-btn-sm', { on: selectMode }]" @click="toggleSelectMode">
@@ -783,9 +807,10 @@ async function handleCreate() {
         <div class="photo-grid" v-if="visiblePhotos.length">
           <div v-for="photo in visiblePhotos" :key="photo.id" class="photo-item" :class="{ selected: selectedPhotoIds.has(photo.id) }">
             <img
-              :src="photo.url"
+              :src="thumbUrl(photo.url) || photo.url"
               :alt="photo.description || ''"
               loading="lazy"
+              @error="(e) => (e.target as HTMLImageElement).src = photo.url"
               @click="selectMode ? togglePhotoSelect(photo.id) : openPreview(photo)"
             />
             <span class="photo-label" v-if="photo.description">{{ photo.description }}</span>
@@ -1144,6 +1169,8 @@ async function handleCreate() {
   margin-bottom: 4px;
 }
 
+.req { color: #e74c3c; }
+
 .field input,
 .field textarea {
   width: 100%;
@@ -1282,6 +1309,12 @@ async function handleCreate() {
 .detail-header h2 {
   font-size: 20px;
   color: #1a1a2e;
+}
+
+.detail-id {
+  font-size: 14px;
+  font-weight: 400;
+  color: #bbb;
 }
 
 .header-actions {
