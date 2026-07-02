@@ -1,0 +1,90 @@
+### 注册
+POST http://localhost:8080/api/user/register
+Content-Type: application/json
+
+{
+  "username": "testuser",
+  "password": "123456",
+  "nickname": "测试用户",
+  "email": "test@example.com"
+}
+
+# 响应示例:
+# {
+#   "code": 200,
+#   "message": "success",
+#   "data": {
+#     "id": 1,
+#     "username": "testuser",
+#     "nickname": "测试用户",
+#     ...
+#   }
+# }
+
+### 登录
+POST http://localhost:8080/api/user/login
+Content-Type: application/json
+
+{
+  "username": "testuser",
+  "password": "123456"
+}
+
+# 响应示例:
+# {
+#   "code": 200,
+#   "message": "success",
+#   "data": {
+#     "token": "eyJhbGciOiJIUzI1NiIs...",
+#     "user": { ... }
+#   }
+# }
+
+### 获取个人资料（替换 token）
+GET http://localhost:8080/api/user/profile
+Authorization: Bearer {{token}}
+
+### 查询省级地区
+GET http://localhost:8080/api/public/regions?level=2
+
+### 查询某城市的景点（替换 regionId）
+GET http://localhost:8080/api/public/attractions?regionId=1&sortBy=likes
+
+### 查询景点详情
+GET http://localhost:8080/api/public/attractions/1
+
+### 单文件上传（替换 token）
+POST http://localhost:8080/api/file/upload
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+
+------WebKitFormBoundary
+Content-Disposition: form-data; name="file"; filename="travel.jpg"
+Content-Type: image/jpeg
+
+< ./test-image.jpg
+------WebKitFormBoundary--
+
+# 响应示例:
+# {
+#   "code": 200,
+#   "message": "success",
+#   "data": "/uploads/2026/06/13/a1b2c3d4.jpg"
+# }
+
+### 多文件上传（替换 token）
+POST http://localhost:8080/api/file/upload/batch
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+
+------WebKitFormBoundary
+Content-Disposition: form-data; name="files"; filename="photo1.jpg"
+Content-Type: image/jpeg
+
+< ./photo1.jpg
+------WebKitFormBoundary
+Content-Disposition: form-data; name="files"; filename="photo2.jpg"
+Content-Type: image/jpeg
+
+< ./photo2.jpg
+------WebKitFormBoundary--
