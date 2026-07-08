@@ -53,3 +53,13 @@ export function updateProfile(data: Partial<UserInfo>) {
 export function changePassword(oldPassword: string, newPassword: string) {
   return http.put<string>('/user/password', { oldPassword, newPassword }).then(extractData)
 }
+
+/** 发送密码重置验证码（无需登录） */
+export function sendResetPasswordCode(email: string) {
+  return http.post<string>('/user/password/reset/code', { email }).then(extractData)
+}
+
+/** 通过验证码重置密码（无需登录） */
+export function resetPassword(data: { email: string; code: string; newPassword: string }) {
+  return http.post<string>('/user/password/reset', data).then(extractData)
+}

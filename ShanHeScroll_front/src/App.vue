@@ -47,7 +47,7 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--modal-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -55,11 +55,11 @@ onBeforeUnmount(() => {
 }
 
 .expired-dialog {
-  background: #fff;
+  background: var(--modal-bg);
   border-radius: 16px;
   padding: 36px 40px 28px;
   text-align: center;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-modal);
   animation: scaleIn 0.25s ease;
 }
 
@@ -70,7 +70,7 @@ onBeforeUnmount(() => {
 
 .expired-dialog p {
   font-size: 15px;
-  color: #555;
+  color: var(--text-secondary);
   margin: 0 0 24px;
 }
 
@@ -78,8 +78,8 @@ onBeforeUnmount(() => {
   padding: 10px 48px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;

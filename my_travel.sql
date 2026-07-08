@@ -44,7 +44,6 @@ CREATE TABLE `album` (
 
 LOCK TABLES `album` WRITE;
 /*!40000 ALTER TABLE `album` DISABLE KEYS */;
-INSERT INTO `album` VALUES (1,2,1901,'test','test','/uploads/2026/06/15/31a04b7d-7861-4b75-8a78-d02c314cb62f.png','2026-06-15 22:15:35','2026-06-15 22:15:35',0),(2,2,2808,'托尔斯泰','没有什么好说的','/uploads/2026/06/15/2828236b-7604-4bbc-b547-3fc435aaa083.png','2026-06-15 23:11:40','2026-06-15 23:11:40',0);
 /*!40000 ALTER TABLE `album` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -73,7 +72,6 @@ CREATE TABLE `album_photo` (
 
 LOCK TABLES `album_photo` WRITE;
 /*!40000 ALTER TABLE `album_photo` DISABLE KEYS */;
-INSERT INTO `album_photo` VALUES (1,1,'/uploads/2026/06/15/5c014cfa-3c9f-4b82-bf49-22f1a160f49b.png',NULL,0,'2026-06-15 22:22:51'),(2,1,'/uploads/2026/06/15/7cc3a4a9-a265-49b5-b3d3-62f761e07069.png','我是描述',1,'2026-06-15 22:57:17'),(3,1,'/uploads/2026/06/15/010037ba-7cc5-4e4e-a2db-cb4de487a219.png','666还有第二关',2,'2026-06-15 23:10:11'),(4,2,'/uploads/2026/06/15/da1a73c1-189a-414d-9c1e-a544c355a982.png','666',0,'2026-06-15 23:11:52'),(5,2,'/uploads/2026/06/15/0b6ca8bc-bfe5-4872-a224-21ebf8dd045c.png',NULL,1,'2026-06-15 23:14:15'),(6,2,'/uploads/2026/06/15/8184c9cb-baf2-4c0c-ac2f-0680de49f67c.png',NULL,2,'2026-06-15 23:14:15'),(7,2,'/uploads/2026/06/15/6659e6b2-fafa-482b-bd37-d1e566a88375.png',NULL,3,'2026-06-15 23:14:15'),(8,2,'/uploads/2026/06/15/e5b52253-8708-440d-a99d-668cb85017be.png',NULL,4,'2026-06-15 23:14:15'),(9,2,'/uploads/2026/06/15/b16a39e3-9789-42d6-8da1-10553c63521b.png',NULL,5,'2026-06-15 23:14:15'),(10,2,'/uploads/2026/06/15/75818587-5fbe-45d2-aa1a-07d8fb845a31.png','',6,'2026-06-15 23:14:15');
 /*!40000 ALTER TABLE `album_photo` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -289,7 +287,6 @@ CREATE TABLE `user` (
 
 LOCK TABLES `user` WRITE;
 /*!40000 ALTER TABLE `user` DISABLE KEYS */;
-INSERT INTO `user` VALUES (1,'testuser','$2a$10$dRLQ92FGXkDvcaPNuXK.B.qoo7xkd/vbTV7H4XtjMT.kMeLo1htYG','测试用户',NULL,'2061914848@qq.com',NULL,NULL,NULL,NULL,NULL,0,'2026-06-09 09:25:48','2026-06-09 11:20:15',1,0),(2,'evannightgale','$2a$10$vWF4fXATz.9pJp/1g4//3uluIg8k.UE9wYprs93/vrvkcs9q0wYYO','Evannightgale','/uploads/2026/06/15/23e4263f-c26b-4451-97f6-9ed37c30fc44.png','evannightgale@gmail.com',NULL,1,NULL,'我是帅哥','湖南 长沙',0,'2026-06-15 20:29:34','2026-06-15 23:20:07',10,0);
 /*!40000 ALTER TABLE `user` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

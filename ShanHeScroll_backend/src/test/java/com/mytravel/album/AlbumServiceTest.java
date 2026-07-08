@@ -1,5 +1,9 @@
 package com.mytravel.album;
 
+import com.mytravel.album.repository.AlbumRepository;
+import com.mytravel.album.repository.AlbumPhotoRepository;
+import com.mytravel.album.repository.AlbumVisibilityUserRepository;
+import com.mytravel.album.service.AlbumService;
 import com.mytravel.common.FileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

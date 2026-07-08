@@ -1,6 +1,7 @@
 package com.mytravel.user;
 
 import com.mytravel.common.util.JwtUtil;
+import com.mytravel.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

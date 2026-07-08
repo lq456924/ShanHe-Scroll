@@ -1,0 +1,133 @@
+/* ============================================================
+   山河卷 — 主题变量（深色 / 浅色）
+   切换方式：document.documentElement.setAttribute('data-theme', 'light'|'dark')
+   ============================================================ */
+
+/* ====== 深色主题（默认） ====== */
+:root,
+[data-theme="dark"] {
+  /* 页面背景 */
+  --bg-page: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+  --bg-page-alt: linear-gradient(160deg, #f0f4ff, #f8f5ff, #f5f0fa);
+
+  /* 卡片 / 面板 */
+  --bg-card: rgba(255,255,255,0.06);
+  --bg-card-hover: rgba(255,255,255,0.1);
+  --bg-panel: rgba(255,255,255,0.04);
+  --bg-glass: rgba(255,255,255,0.06);
+
+  /* 输入框 */
+  --bg-input: rgba(255,255,255,0.05);
+  --bg-input-focus: rgba(255,255,255,0.08);
+
+  /* 导航栏 */
+  --bg-nav: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+  /* 装饰色块 */
+  --decor-1: #667eea;
+  --decor-2: #764ba2;
+  --decor-3: #f093fb;
+  --decor-4: #a78bfa;
+
+  /* 文字层级 */
+  --text-primary: #fff;
+  --text-heading: #fff;
+  --text-body: rgba(255,255,255,0.85);
+  --text-secondary: rgba(255,255,255,0.7);
+  --text-label: rgba(255,255,255,0.6);
+  --text-muted: rgba(255,255,255,0.5);
+  --text-dim: rgba(255,255,255,0.4);
+  --text-placeholder: rgba(255,255,255,0.25);
+  --text-accent: #a78bfa;
+  --text-accent2: #f093fb;
+
+  /* 边框 */
+  --border-card: rgba(255,255,255,0.12);
+  --border-input: rgba(255,255,255,0.15);
+  --border-input-focus: #a78bfa;
+  --border-subtle: rgba(255,255,255,0.08);
+  --border-divider: rgba(255,255,255,0.06);
+
+  /* 按钮 */
+  --btn-primary: linear-gradient(135deg, #667eea, #764ba2);
+  --btn-primary-hover: linear-gradient(135deg, #764ba2, #f093fb);
+  --btn-primary-text: #fff;
+
+  /* 阴影 */
+  --shadow-card: 0 20px 60px rgba(0,0,0,0.3);
+  --shadow-modal: 0 24px 64px rgba(0,0,0,0.5);
+  --shadow-focus: 0 0 0 3px rgba(167,139,250,0.15);
+
+  /* 语义色 */
+  --color-success: #6ee7b7;
+  --color-error: #f87171;
+  --color-warning: #f39c12;
+
+  /* 弹窗 */
+  --modal-bg: rgba(20, 18, 40, 0.95);
+  --modal-overlay: rgba(0,0,0,0.6);
+}
+
+/* ====== 浅色主题 ====== */
+[data-theme="light"] {
+  /* 页面背景 */
+  --bg-page: linear-gradient(160deg, #f0f4ff 0%, #f8f5ff 50%, #f5f0fa 100%);
+  --bg-page-alt: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+
+  /* 卡片 / 面板 */
+  --bg-card: #fff;
+  --bg-card-hover: #f5f7ff;
+  --bg-panel: #fff;
+  --bg-glass: #fff;
+
+  /* 输入框 */
+  --bg-input: #fff;
+  --bg-input-focus: #fff;
+
+  /* 导航栏（保持不变） */
+  --bg-nav: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+  /* 装饰色块 */
+  --decor-1: #667eea;
+  --decor-2: #764ba2;
+  --decor-3: #f093fb;
+  --decor-4: #a78bfa;
+
+  /* 文字层级 */
+  --text-primary: #1a1a2e;
+  --text-heading: #1a1a2e;
+  --text-body: #333;
+  --text-secondary: #555;
+  --text-label: #666;
+  --text-muted: #888;
+  --text-dim: #999;
+  --text-placeholder: #bbb;
+  --text-accent: #667eea;
+  --text-accent2: #764ba2;
+
+  /* 边框 */
+  --border-card: #e8ecf1;
+  --border-input: #e0e0e0;
+  --border-input-focus: #667eea;
+  --border-subtle: #f0f0f0;
+  --border-divider: #f0f0f0;
+
+  /* 按钮 */
+  --btn-primary: linear-gradient(135deg, #667eea, #764ba2);
+  --btn-primary-hover: linear-gradient(135deg, #667eea, #764ba2);
+  --btn-primary-text: #fff;
+
+  /* 阴影 */
+  --shadow-card: 0 2px 12px rgba(0,0,0,0.06);
+  --shadow-modal: 0 16px 48px rgba(0,0,0,0.15);
+  --shadow-focus: 0 0 0 3px rgba(102,126,234,0.15);
+
+  /* 语义色 */
+  --color-success: #27ae60;
+  --color-error: #e74c3c;
+  --color-warning: #e67e22;
+
+  /* 弹窗 */
+  --modal-bg: #fff;
+  --modal-overlay: rgba(0,0,0,0.4);
+}

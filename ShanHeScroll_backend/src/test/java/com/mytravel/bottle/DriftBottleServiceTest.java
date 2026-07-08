@@ -1,8 +1,11 @@
 package com.mytravel.bottle;
 
+import com.mytravel.bottle.repository.DriftBottleRepository;
+import com.mytravel.bottle.repository.BottleLikeRepository;
+import com.mytravel.bottle.service.DriftBottleService;
 import com.mytravel.common.util.RateLimiter;
 import com.mytravel.user.User;
-import com.mytravel.user.UserRepository;
+import com.mytravel.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

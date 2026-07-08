@@ -45,14 +45,12 @@ spring.mail.password=你的SMTP授权码
 ```bash
 cd ShanHeScroll_backend
 
-# Windows（使用项目自带的 Maven Wrapper）
-mvnw.cmd spring-boot:run
+# Windows
+./mvnw spring-boot:run 
 
-# macOS / Linux
 
-```
 
-启动成功后会看到：`Started DemoApplication in ...`，默认运行在 **`http://localhost:8080`**。
+启动成功后会看到：`Started ShanHeScrollApplication in ...`，默认运行在 **`http://localhost:8080`**。
 
 ---
 
@@ -139,4 +137,4 @@ npm run build
 后端
 cd ShanHeScroll_backend
 ./mvnw package -DskipTests
-产出 target/demo-0.0.1-SNAPSHOT.jar
+产出 target/shanhescroll-0.0.1-SNAPSHOT.jar

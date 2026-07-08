@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class FileService {
@@ -24,7 +25,7 @@ public class FileService {
             "image/jpeg", "image/png", "image/gif", "image/webp"
     );
 
-    private static final long MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+    private static final long MAX_SIZE = 20 * 1024 * 1024; // 20 MB
     private static final int THUMB_MAX = 400; // 缩略图最大边长
 
     private final Path uploadDir;
@@ -41,7 +42,7 @@ public class FileService {
             throw new RuntimeException("文件不能为空");
         }
         if (file.getSize() > MAX_SIZE) {
-            throw new RuntimeException("文件大小不能超过 10MB");
+            throw new RuntimeException("文件大小不能超过 20MB");
         }
         if (!ALLOWED_TYPES.contains(file.getContentType())) {
             throw new RuntimeException("不支持的文件类型，仅允许 jpg / png / gif / webp");
@@ -63,18 +64,25 @@ public class FileService {
             Path targetPath = targetDir.resolve(baseName + ext);
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-            // 生成缩略图（仅 jpg/png）
+            // 异步生成缩略图，不阻塞上传响应
             if (ext.equals(".jpg") || ext.equals(".jpeg") || ext.equals(".png")) {
-                try {
-                    BufferedImage original = ImageIO.read(targetPath.toFile());
-                    if (original != null) {
-                        BufferedImage thumb = resizeImage(original);
-                        Path thumbPath = targetDir.resolve("thumb_" + baseName + ext);
-                        ImageIO.write(thumb, ext.replace(".", ""), thumbPath.toFile());
+                // 捕获到 effectively-final 变量供 lambda 使用
+                final Path srcPath = targetPath;
+                final String fileExt = ext;
+                final String thumbBaseName = baseName;
+                final Path thumbDir = targetDir;
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        BufferedImage original = ImageIO.read(srcPath.toFile());
+                        if (original != null) {
+                            BufferedImage thumb = resizeImage(original);
+                            Path thumbPath = thumbDir.resolve("thumb_" + thumbBaseName + fileExt);
+                            ImageIO.write(thumb, fileExt.replace(".", ""), thumbPath.toFile());
+                        }
+                    } catch (Exception ignored) {
+                        // 缩略图生成失败不影响主流程
                     }
-                } catch (Exception ignored) {
-                    // 缩略图生成失败不影响主流程
-                }
+                });
             }
 
             return "/uploads/" + datePath + "/" + baseName + ext;

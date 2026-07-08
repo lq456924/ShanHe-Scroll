@@ -22,6 +22,10 @@ export function unbanUser(id: number) {
   return http.put(`/admin/users/${id}/unban`).then(extractData)
 }
 
+export function updateUserRole(id: number, role: number) {
+  return http.put(`/admin/users/${id}/role`, { role }).then(extractData)
+}
+
 export function deleteUser(id: number) {
   return http.delete(`/admin/users/${id}`).then(extractData)
 }

@@ -3,6 +3,22 @@ import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { getMyAlbums, createAlbum, getAlbumDetail, addPhoto, updatePhotoDesc, deletePhoto, deleteAlbum, type Album } from '@/api/album'
+import { useTheme } from '@/composables/useTheme'
+
+const { theme: albumTheme } = useTheme()
+const am = computed(() => albumTheme.value === 'dark' ? {
+  area: 'rgba(255,255,255,0.04)',
+  border: 'rgba(255,255,255,0.08)',
+  label: 'rgba(255,255,255,0.5)',
+  emphasisLabel: '#fff',
+  noAlbumBorder: 'rgba(255,255,255,0.06)',
+} : {
+  area: 'rgba(0,0,0,0.04)',
+  border: 'rgba(0,0,0,0.12)',
+  label: 'rgba(0,0,0,0.45)',
+  emphasisLabel: '#333',
+  noAlbumBorder: 'rgba(0,0,0,0.08)',
+})
 import { loadRegionData, groupByProvince, getCityName, getProvinces, getCitiesByProvince, getProvinceByCityId } from '@/utils/regions'
 import { thumbUrl } from '@/utils/thumb'
 import http, { extractData } from '@/api'
@@ -14,6 +30,7 @@ const mapMode = ref(true)
 const mapChartRef = ref<HTMLDivElement>()
 let mapChart: echarts.ECharts | null = null
 const mapLoading = ref(false)
+const zoomPercent = ref(158) // 初始缩放（Album 默认 1.58）
 
 // 地理数据缓存
 const geoJsonCache = new Map<string, any>()
@@ -76,6 +93,15 @@ const PHOTO_PAGE_SIZE = 8
 const hasMorePhotos = ref(false)
 const uploadingPhoto = ref(false)
 const fileInput = ref<HTMLInputElement>()
+
+// 上传大小限制（与后端一致）
+const MAX_FILE_SIZE = 20 * 1024 * 1024   // 单文件 20MB
+const MAX_TOTAL_SIZE = 200 * 1024 * 1024 // 总请求 200MB
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
 
 // 照片预览（支持翻页）
 const previewIndex = ref(-1)
@@ -192,6 +218,16 @@ interface PendingPhoto {
 const pendingPhotos = ref<PendingPhoto[]>([])
 const addingPhoto = ref(false)
 
+// 分批并发上传
+const BATCH_SIZE = 4
+const uploadProgress = ref(0)
+
+// 计算属性：已选文件总大小
+const pendingTotalSize = computed(() =>
+  pendingPhotos.value.reduce((sum, p) => sum + p.file.size, 0)
+)
+const sizeExceeded = computed(() => pendingTotalSize.value > MAX_TOTAL_SIZE)
+
 function triggerPhotoUpload() {
   addingPhoto.value = true
   pendingPhotos.value = []
@@ -204,7 +240,18 @@ function onFileSelected(e: Event) {
     addingPhoto.value = false
     return
   }
-  pendingPhotos.value = Array.from(files).map(f => ({
+  const fileList = Array.from(files)
+  // 过滤单文件超限的
+  const oversized = fileList.filter(f => f.size > MAX_FILE_SIZE)
+  if (oversized.length) {
+    alert(`以下文件超过单文件上限(20MB)，已跳过:\n${oversized.map(f => `${f.name}（${formatSize(f.size)}）`).join('\n')}`)
+  }
+  const valid = fileList.filter(f => f.size <= MAX_FILE_SIZE)
+  if (!valid.length) {
+    addingPhoto.value = false
+    return
+  }
+  pendingPhotos.value = valid.map(f => ({
     file: f,
     name: f.name,
     desc: '',
@@ -226,15 +273,45 @@ function cancelAddPhoto() {
 
 async function confirmUpload() {
   if (!pendingPhotos.value.length || !detailAlbum.value) return
+  if (sizeExceeded.value) return
 
   uploadingPhoto.value = true
+  uploadProgress.value = 0
+
   try {
-    // 批量上传文件
-    const form = new FormData()
-    for (const p of pendingPhotos.value) {
-      form.append('files', p.file)
+    // 拆分成多个批次（每批 BATCH_SIZE 个）
+    const batches: PendingPhoto[][] = []
+    for (let i = 0; i < pendingPhotos.value.length; i += BATCH_SIZE) {
+      batches.push(pendingPhotos.value.slice(i, i + BATCH_SIZE))
     }
-    const urls: string[] = await http.post<string[]>('/file/upload/batch', form).then(extractData)
+
+    // 总字节数，用于计算整体百分比
+    const totalBytes = pendingPhotos.value.reduce((s, p) => s + p.file.size, 0)
+    const perBatchLoaded = new Array(batches.length).fill(0)
+
+    // 多批并发上传
+    const batchPromise = batches.map((batch, idx) => {
+      const form = new FormData()
+      for (const p of batch) {
+        form.append('files', p.file)
+      }
+      return http.post<string[]>('/file/upload/batch', form, {
+        timeout: 300000,
+        onUploadProgress: (pe: { loaded?: number }) => {
+          if (pe.loaded) {
+            perBatchLoaded[idx] = pe.loaded
+            const allLoaded = perBatchLoaded.reduce((s, v) => s + v, 0)
+            uploadProgress.value = Math.min(Math.round((allLoaded / totalBytes) * 100), 99)
+          }
+        },
+      }).then(extractData)
+    })
+
+    const results = await Promise.all(batchPromise)
+    uploadProgress.value = 100
+
+    // 按原始顺序展平所有 URL
+    const urls: string[] = results.flat()
 
     // 逐个添加照片（带描述）
     for (let i = 0; i < urls.length; i++) {
@@ -246,8 +323,11 @@ async function confirmUpload() {
     visiblePhotos.value = []
     loadMorePhotos()
     cancelAddPhoto()
-  } catch { /* ignore */ }
+  } catch (err: any) {
+    alert('上传失败: ' + (err?.message || '未知错误'))
+  }
   uploadingPhoto.value = false
+  uploadProgress.value = 0
 }
 
 async function openDetail(album: Album) {
@@ -390,6 +470,10 @@ async function renderAlbumChina() {
   if (!mapChart) {
     mapChart = echarts.init(mapChartRef.value)
     mapChart.on('click', onAlbumMapClick)
+    mapChart.on('georoam', () => {
+      const opt = mapChart!.getOption() as any
+      zoomPercent.value = Math.round((opt.series?.[0]?.zoom || 1.58) * 100)
+    })
   }
   mapChart.resize()
 
@@ -412,17 +496,17 @@ async function renderAlbumChina() {
     const hasAlbum = pid && albumProvinceIds.has(pid)
     return {
       name,
-      itemStyle: hasAlbum ? { areaColor: 'rgba(167,139,250,0.5)', borderColor: 'rgba(167,139,250,0.6)' } : { areaColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.06)' },
+      itemStyle: hasAlbum ? { areaColor: 'rgba(167,139,250,0.5)', borderColor: 'rgba(167,139,250,0.6)' } : { areaColor: am.value.area, borderColor: am.value.noAlbumBorder },
       label: hasAlbum ? { color: '#fff', fontWeight: 'bold' } : {},
     }
   })
 
   mapChart.setOption({
     tooltip: { trigger: 'item', formatter: '{b}' },
-    series: [{ type: 'map', map: 'china', roam: true, zoom: 1.58, center: [104.5, 36],
-      label: { show: true, fontSize: 10, color: 'rgba(255,255,255,0.5)' },
-      itemStyle: { areaColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1 },
-      emphasis: { label: { fontSize: 13, fontWeight: 'bold', color: '#fff' }, itemStyle: { areaColor: 'rgba(167,139,250,0.3)' } },
+    series: [{ type: 'map', map: 'china', roam: true, scaleLimit: { min: 1, max: 4 }, zoom: 1.58, center: [104.5, 36],
+      label: { show: true, fontSize: 10, color: am.value.label },
+      itemStyle: { areaColor: am.value.area, borderColor: am.value.border, borderWidth: 1 },
+      emphasis: { label: { fontSize: 13, fontWeight: 'bold', color: am.value.emphasisLabel }, itemStyle: { areaColor: 'rgba(167,139,250,0.3)' } },
       data: mapData,
     }],
   })
@@ -474,17 +558,17 @@ async function renderAlbumProvince(provinceId: number) {
     const hasAlbum = city && albumCityIds.value.has(city.id)
     return {
       name: cityName,
-      itemStyle: hasAlbum ? { areaColor: 'rgba(167,139,250,0.5)', borderColor: 'rgba(167,139,250,0.6)' } : { areaColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.06)' },
+      itemStyle: hasAlbum ? { areaColor: 'rgba(167,139,250,0.5)', borderColor: 'rgba(167,139,250,0.6)' } : { areaColor: am.value.area, borderColor: am.value.noAlbumBorder },
       label: hasAlbum ? { color: '#fff', fontWeight: 'bold' } : {},
     }
   })
 
   mapChart.setOption({
     tooltip: { trigger: 'item', formatter: '{b}' },
-    series: [{ type: 'map', map: mapName, roam: true, zoom: 1.58,
-      label: { show: true, fontSize: 11, color: 'rgba(255,255,255,0.5)' },
-      itemStyle: { areaColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1 },
-      emphasis: { label: { fontSize: 14, fontWeight: 'bold', color: '#fff' }, itemStyle: { areaColor: 'rgba(167,139,250,0.3)' } },
+    series: [{ type: 'map', map: mapName, roam: true, scaleLimit: { min: 1, max: 4 }, zoom: 1.58,
+      label: { show: true, fontSize: 11, color: am.value.label },
+      itemStyle: { areaColor: am.value.area, borderColor: am.value.border, borderWidth: 1 },
+      emphasis: { label: { fontSize: 14, fontWeight: 'bold', color: am.value.emphasisLabel }, itemStyle: { areaColor: 'rgba(167,139,250,0.3)' } },
       data: mapData,
     }],
   }, true)
@@ -589,6 +673,18 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', handleMapResize)
 })
 
+// 主题切换时重绘地图
+watch(albumTheme, async () => {
+  if (!mapChart) return
+  mapLoading.value = true
+  if (mapLevel.value === 'china') {
+    await renderAlbumChina()
+  } else {
+    await renderAlbumProvince(mapLevel.value)
+  }
+  mapLoading.value = false
+})
+
 async function loadAlbums() {
   loading.value = true
   try {
@@ -666,6 +762,7 @@ async function handleCreate() {
         <div class="map-chart-wrap">
           <div v-if="mapLoading" class="map-loading">加载中...</div>
           <div ref="mapChartRef" class="map-chart"></div>
+          <div class="zoom-badge">{{ zoomPercent }}%</div>
         </div>
         <p v-if="mapFilterProvince || mapSelectedCity" class="map-filter-hint">
           当前筛选：{{ mapSelectedCity || mapFilterProvince }}（{{ filteredAlbums.length }} 个相册）
@@ -781,18 +878,32 @@ async function handleCreate() {
         <!-- 添加照片中 — 多选 -->
         <div v-if="addingPhoto" class="upload-panel">
           <div class="upload-panel-header">
-            <span>{{ pendingPhotos.length ? `已选 ${pendingPhotos.length} 张` : '选择照片' }}</span>
+            <div>
+              <span>{{ pendingPhotos.length ? `已选 ${pendingPhotos.length} 张` : '选择照片' }}</span>
+              <span v-if="pendingPhotos.length" class="size-info" :class="{ 'size-exceeded': sizeExceeded }">
+                · 总大小 {{ formatSize(pendingTotalSize) }} / 200MB
+              </span>
+              <div class="size-limit-hint">单文件 ≤ 20MB，总大小 ≤ 200MB</div>
+            </div>
             <div class="upload-panel-actions">
               <button v-if="!pendingPhotos.length" class="select-btn-sm" @click="triggerPhotoUpload">选择照片</button>
               <template v-else>
                 <button class="select-btn-sm" @click="triggerPhotoUpload">追加</button>
-                <button class="confirm-btn-sm" :disabled="uploadingPhoto" @click="confirmUpload">
-                  {{ uploadingPhoto ? '上传中...' : `上传全部` }}
+                <button class="confirm-btn-sm" :disabled="uploadingPhoto || sizeExceeded" @click="confirmUpload">
+                  {{ uploadingPhoto ? '上传中...' : sizeExceeded ? '超出限制' : `上传全部` }}
                 </button>
                 <button class="cancel-btn-sm" @click="cancelAddPhoto">取消</button>
               </template>
             </div>
           </div>
+          <!-- 上传进度条 -->
+          <div v-if="uploadingPhoto" class="upload-progress-wrap">
+            <div class="upload-progress-bar">
+              <div class="upload-progress-fill" :style="{ width: uploadProgress + '%' }"></div>
+            </div>
+            <span class="upload-progress-text">{{ uploadProgress }}%</span>
+          </div>
+
           <div v-if="pendingPhotos.length" class="upload-list">
             <div v-for="(p, i) in pendingPhotos" :key="i" class="upload-item">
               <span class="upload-item-name">📄 {{ p.name }}</span>
@@ -873,7 +984,7 @@ async function handleCreate() {
 <style scoped>
 .album-page {
   min-height: calc(100vh - 73px);
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+  background: var(--bg-page);
 }
 
 .album-container {
@@ -892,7 +1003,7 @@ async function handleCreate() {
 .album-header h1 {
   font-size: 24px;
   font-weight: 700;
-  background: linear-gradient(135deg, #a78bfa, #f093fb);
+  background: linear-gradient(135deg, var(--text-accent), var(--text-accent2));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -906,7 +1017,7 @@ async function handleCreate() {
 
 .mode-toggle {
   display: flex;
-  background: #eee;
+  background: var(--bg-panel);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -916,22 +1027,22 @@ async function handleCreate() {
   border: none;
   background: transparent;
   font-size: 13px;
-  color: #666;
+  color: var(--text-label);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .mode-toggle button.active {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
 }
 
 .create-btn {
   padding: 10px 24px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -948,25 +1059,42 @@ async function handleCreate() {
 .map-breadcrumb {
   padding: 8px 0;
   font-size: 14px;
-  color: rgba(255,255,255,0.6);
+  color: var(--text-label);
 }
 
 .map-breadcrumb-item { user-select: none; transition: color 0.2s; }
-.map-breadcrumb-item.clickable { color: #a78bfa; cursor: pointer; font-weight: 500; }
-.map-breadcrumb-item.clickable:hover { color: #f093fb; }
-.map-breadcrumb-item .sep { margin: 0 6px; color: rgba(255,255,255,0.2); }
+.map-breadcrumb-item.clickable { color: var(--text-accent); cursor: pointer; font-weight: 500; }
+.map-breadcrumb-item.clickable:hover { color: var(--text-accent2); }
+.map-breadcrumb-item .sep { margin: 0 6px; color: var(--text-placeholder); }
 
 .map-chart-wrap {
   position: relative;
   height: 500px;
-  background: rgba(255,255,255,0.03);
+  background: var(--bg-panel);
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--border-divider);
 }
 
 .map-chart {
   width: 100%;
   height: 100%;
+}
+
+.zoom-badge {
+  position: absolute;
+  bottom: 14px;
+  right: 16px;
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
 }
 
 .map-loading {
@@ -976,18 +1104,18 @@ async function handleCreate() {
   background: rgba(0,0,0,0.4);
   z-index: 10;
   font-size: 15px;
-  color: #a78bfa;
+  color: var(--text-accent);
 }
 
 .map-filter-hint {
   margin-top: 10px;
   font-size: 14px;
-  color: rgba(255,255,255,0.7);
+  color: var(--text-secondary);
   text-align: center;
 }
 
 .clear-filter {
-  color: #e74c3c;
+  color: var(--color-error);
   cursor: pointer;
   margin-left: 8px;
 }
@@ -1002,9 +1130,9 @@ async function handleCreate() {
 .province-title {
   font-size: 18px;
   font-weight: 600;
-  color: rgba(255,255,255,0.7);
+  color: var(--text-secondary);
   margin: 0 0 16px;
-  border-left: 3px solid #a78bfa;
+  border-left: 3px solid var(--text-accent);
   padding-left: 12px;
 }
 
@@ -1015,10 +1143,10 @@ async function handleCreate() {
 }
 
 .album-card {
-  background: rgba(255,255,255,0.06);
+  background: var(--bg-card);
   border-radius: 14px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--border-subtle);
   transition: transform 0.3s, box-shadow 0.3s;
   cursor: pointer;
 }
@@ -1031,7 +1159,7 @@ async function handleCreate() {
 
 .card-cover {
   height: 180px;
-  background: rgba(255,255,255,0.04);
+  background: var(--bg-panel);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1064,7 +1192,7 @@ async function handleCreate() {
   opacity: 1;
 }
 
-.card-delete-btn:hover { background: rgba(231,76,60,0.15); color: #e74c3c; }
+.card-delete-btn:hover { background: rgba(231,76,60,0.15); color: var(--color-error); }
 
 .card-body {
   position: relative;
@@ -1074,27 +1202,27 @@ async function handleCreate() {
 .card-title {
   font-size: 16px;
   font-weight: 600;
-  color: rgba(255,255,255,0.9);
+  color: var(--text-body);
   margin-bottom: 6px;
 }
 
 .card-id {
   font-size: 12px;
   font-weight: 400;
-  color: rgba(255,255,255,0.3);
+  color: var(--text-placeholder);
 }
 
 .card-meta {
   display: flex;
   gap: 12px;
   font-size: 13px;
-  color: rgba(255,255,255,0.5);
+  color: var(--text-muted);
 }
 
 .card-desc {
   margin-top: 8px;
   font-size: 13px;
-  color: rgba(255,255,255,0.5);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -1110,7 +1238,7 @@ async function handleCreate() {
 }
 
 .empty-state p {
-  color: rgba(255,255,255,0.4);
+  color: var(--text-dim);
   margin-bottom: 20px;
 }
 
@@ -1118,8 +1246,8 @@ async function handleCreate() {
   padding: 10px 28px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -1127,7 +1255,7 @@ async function handleCreate() {
 
 .loading-state {
   text-align: center;
-  color: rgba(255,255,255,0.4);
+  color: var(--text-dim);
   padding: 80px 0;
 }
 
@@ -1146,16 +1274,16 @@ async function handleCreate() {
   width: 440px;
   max-height: 85vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--modal-bg);
   border-radius: 14px;
   padding: 28px 32px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-modal);
 }
 
 .modal-card h3 {
   margin: 0 0 20px;
   font-size: 18px;
-  color: #1a1a2e;
+  color: var(--text-heading);
 }
 
 .field {
@@ -1165,26 +1293,28 @@ async function handleCreate() {
 .field label {
   display: block;
   font-size: 13px;
-  color: #666;
+  color: var(--text-label);
   margin-bottom: 4px;
 }
 
-.req { color: #e74c3c; }
+.req { color: var(--color-error); }
 
 .field input,
 .field textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-input);
   border-radius: 8px;
   font-size: 14px;
   outline: none;
   font-family: inherit;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
 .field input:focus,
 .field textarea:focus {
-  border-color: #667eea;
+  border-color: var(--border-input-focus);
 }
 
 .location-row {
@@ -1196,21 +1326,22 @@ async function handleCreate() {
   flex: 1;
   height: 44px;
   padding: 0 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-input);
   border-radius: 8px;
   font-size: 14px;
   outline: none;
-  background: #fff;
+  background: var(--bg-input);
+  color: var(--text-primary);
   cursor: pointer;
 }
 
 .location-row select:focus {
-  border-color: #667eea;
+  border-color: var(--border-input-focus);
 }
 
 .location-row select:disabled {
-  background: #f5f5f5;
-  color: #bbb;
+  background: var(--bg-panel);
+  color: var(--text-placeholder);
   cursor: not-allowed;
 }
 
@@ -1226,7 +1357,7 @@ async function handleCreate() {
 .upload-btn {
   padding: 10px 16px;
   background: #667eea;
-  color: #fff;
+  color: var(--btn-primary-text);
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
@@ -1243,12 +1374,12 @@ async function handleCreate() {
 
 .bind-hint {
   font-size: 13px;
-  color: #667eea;
+  color: var(--text-accent);
   margin: -6px 0 8px;
 }
 
 .create-error {
-  color: #e74c3c;
+  color: var(--color-error);
   font-size: 13px;
   margin: 8px 0 0;
 }
@@ -1262,10 +1393,10 @@ async function handleCreate() {
 
 .btn-cancel {
   padding: 8px 20px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-input);
   border-radius: 8px;
-  background: #fff;
-  color: #666;
+  background: var(--bg-input);
+  color: var(--text-label);
   cursor: pointer;
 }
 
@@ -1273,8 +1404,8 @@ async function handleCreate() {
   padding: 8px 24px;
   border: none;
   border-radius: 8px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
   font-weight: 500;
   cursor: pointer;
 }
@@ -1287,10 +1418,10 @@ async function handleCreate() {
   max-width: 95vw;
   max-height: 90vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--modal-bg);
   border-radius: 16px;
   padding: 28px 32px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  box-shadow: var(--shadow-modal);
   animation: slideUp 0.3s ease;
 }
 
@@ -1308,13 +1439,13 @@ async function handleCreate() {
 
 .detail-header h2 {
   font-size: 20px;
-  color: #1a1a2e;
+  color: var(--text-heading);
 }
 
 .detail-id {
   font-size: 14px;
   font-weight: 400;
-  color: #bbb;
+  color: var(--text-placeholder);
 }
 
 .header-actions {
@@ -1335,16 +1466,16 @@ async function handleCreate() {
 .detail-close:hover { background: rgba(0,0,0,0.4); }
 
 .detail-desc {
-  font-size: 14px; color: #888;
+  font-size: 14px; color: var(--text-muted);
   margin: 0 0 14px;
 }
 
 .add-photo-btn-sm {
   padding: 5px 14px;
-  border: 1px solid #667eea;
+  border: 1px solid var(--text-accent);
   border-radius: 6px;
   background: transparent;
-  color: #667eea;
+  color: var(--text-accent);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -1353,7 +1484,7 @@ async function handleCreate() {
 
 .add-photo-btn-sm:hover, .add-photo-btn-sm.on {
   background: #667eea;
-  color: #fff;
+  color: var(--btn-primary-text);
 }
 
 .delete-batch-btn {
@@ -1371,7 +1502,7 @@ async function handleCreate() {
 /* 上传面板 */
 .upload-panel {
   margin-bottom: 16px;
-  border: 1px solid #e8ecf1;
+  border: 1px solid var(--border-card);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -1381,14 +1512,61 @@ async function handleCreate() {
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  background: #f8f9ff;
+  background: var(--bg-panel);
   font-size: 13px;
-  color: #666;
+  color: var(--text-label);
 }
 
 .upload-panel-actions {
   display: flex;
   gap: 6px;
+}
+
+.size-info {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.size-exceeded {
+  color: #e74c3c;
+  font-weight: 600;
+}
+.size-limit-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* 上传进度条 */
+.upload-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+}
+
+.upload-progress-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #667eea, #a78bfa);
+  transition: width 0.3s ease;
+}
+
+.upload-progress-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-accent);
+  min-width: 36px;
+  text-align: right;
 }
 
 .upload-list {
@@ -1401,12 +1579,12 @@ async function handleCreate() {
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .upload-item-name {
   font-size: 12px;
-  color: #666;
+  color: var(--text-label);
   width: 140px;
   flex-shrink: 0;
   white-space: nowrap;
@@ -1418,21 +1596,23 @@ async function handleCreate() {
   flex: 1;
   height: 32px;
   padding: 0 10px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-input);
   border-radius: 6px;
   font-size: 13px;
   outline: none;
   min-width: 100px;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
-.photo-desc-input-sm:focus { border-color: #667eea; }
+.photo-desc-input-sm:focus { border-color: var(--border-input-focus); }
 
 .select-btn-sm, .confirm-btn-sm {
   padding: 5px 14px;
   border: none;
   border-radius: 6px;
   background: #667eea;
-  color: #fff;
+  color: var(--btn-primary-text);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -1443,28 +1623,28 @@ async function handleCreate() {
 
 .cancel-btn-sm {
   padding: 5px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-input);
   border-radius: 6px;
-  background: #fff;
-  color: #888;
+  background: var(--bg-input);
+  color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
 }
 
-.cancel-btn-sm:hover { color: #e74c3c; }
+.cancel-btn-sm:hover { color: var(--color-error); }
 
 .remove-btn {
   width: 22px; height: 22px;
   flex-shrink: 0;
   border: none; border-radius: 50%;
-  background: #f0f0f0;
-  color: #999;
+  background: var(--bg-input);
+  color: var(--text-dim);
   font-size: 11px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
 
-.remove-btn:hover { background: #fee; color: #e74c3c; }
+.remove-btn:hover { background: #fee; color: var(--color-error); }
 .remove-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* 照片网格 */
@@ -1478,7 +1658,7 @@ async function handleCreate() {
   aspect-ratio: 1;
   border-radius: 10px;
   overflow: hidden;
-  background: #f0f0f0;
+  background: var(--bg-panel);
   position: relative;
 }
 
@@ -1549,7 +1729,7 @@ async function handleCreate() {
 
 .no-photos {
   text-align: center;
-  color: #bbb;
+  color: var(--text-placeholder);
   padding: 40px 0;
 }
 
@@ -1560,18 +1740,18 @@ async function handleCreate() {
 
 .load-more-btn {
   padding: 8px 28px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-input);
   border-radius: 8px;
-  background: #fff;
-  color: #667eea;
+  background: var(--bg-input);
+  color: var(--text-accent);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .load-more-btn:hover {
-  background: #f5f5ff;
-  border-color: #667eea;
+  background: var(--bg-card-hover);
+  border-color: var(--border-input-focus);
 }
 
 /* ---- 照片预览 — 明信片 ---- */
@@ -1716,7 +1896,7 @@ async function handleCreate() {
   border: none;
   border-radius: 4px;
   background: #667eea;
-  color: #fff;
+  color: var(--btn-primary-text);
   font-size: 12px;
   cursor: pointer;
 }

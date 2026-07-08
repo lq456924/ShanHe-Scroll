@@ -2,10 +2,12 @@
 import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { logout as apiLogout, updateProfile } from '@/api/user'
+import { useTheme } from '@/composables/useTheme'
 import http, { extractData } from '@/api'
 
 const router = useRouter()
 const route = useRoute()
+const { theme, toggle: toggleTheme } = useTheme()
 const fileInput = ref<HTMLInputElement>()
 
 const navItems = [
@@ -142,6 +144,11 @@ watch(() => route.path, () => {
         {{ item.label }}
       </button>
     </nav>
+
+    <!-- 主题切换 -->
+    <button class="theme-toggle" @click="toggleTheme" :title="theme === 'dark' ? '切换浅色' : '切换深色'">
+      {{ theme === 'dark' ? '☀' : '☾' }}
+    </button>
 
     <!-- 右侧用户区 -->
     <div class="user-area" @click="handleAvatarClick">
@@ -355,6 +362,29 @@ watch(() => route.path, () => {
 
 .dropdown-leave-active {
   animation: dropIn 0.15s ease-in reverse;
+}
+
+/* ---- 主题切换 ---- */
+.theme-toggle {
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  background: rgba(255,255,255,0.25);
+  border-color: rgba(255,255,255,0.5);
+  transform: rotate(15deg);
 }
 
 @keyframes dropIn {

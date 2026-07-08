@@ -203,7 +203,7 @@ function goLogin() {
   align-items: center;
   justify-content: center;
   height: calc(100vh - 73px);
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+  background: var(--bg-page);
   overflow: hidden;
   position: relative;
 }
@@ -222,9 +222,9 @@ function goLogin() {
   animation: float 12s ease-in-out infinite;
 }
 
-.shape-1 { width: 400px; height: 400px; background: #667eea; top: -100px; right: -100px; animation-delay: 0s; }
-.shape-2 { width: 300px; height: 300px; background: #764ba2; bottom: -80px; left: -80px; animation-delay: -4s; }
-.shape-3 { width: 200px; height: 200px; background: #f093fb; top: 50%; left: 50%; animation-delay: -8s; }
+.shape-1 { width: 400px; height: 400px; background: var(--decor-1); top: -100px; right: -100px; animation-delay: 0s; }
+.shape-2 { width: 300px; height: 300px; background: var(--decor-2); bottom: -80px; left: -80px; animation-delay: -4s; }
+.shape-3 { width: 200px; height: 200px; background: var(--decor-3); top: 50%; left: 50%; animation-delay: -8s; }
 
 @keyframes float {
   0%, 100% { transform: translate(0, 0) scale(1); }
@@ -237,11 +237,11 @@ function goLogin() {
   z-index: 1;
   width: 420px;
   padding: 38px 40px 36px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-card);
   border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-card);
 }
 
 .logo-icon {
@@ -265,7 +265,7 @@ function goLogin() {
 .register-subtitle {
   text-align: center;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   margin: 0 0 24px;
 }
 
@@ -283,30 +283,30 @@ function goLogin() {
 
 .field label {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-label);
   font-weight: 500;
 }
 
 .field input {
   height: 46px;
   padding: 0 16px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--border-input);
   border-radius: 12px;
   font-size: 15px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  background: var(--bg-input);
   outline: none;
   transition: all 0.3s;
 }
 
 .field input:focus {
-  border-color: #a78bfa;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.15);
+  border-color: var(--border-input-focus);
+  background: var(--bg-input-focus);
+  box-shadow: var(--shadow-focus);
 }
 
 .field input::placeholder {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--text-placeholder);
 }
 
 .field-hint {
@@ -327,10 +327,10 @@ function goLogin() {
   width: 110px;
   height: 46px;
   flex-shrink: 0;
-  border: 1px solid #a78bfa;
+  border: 1px solid var(--text-accent);
   border-radius: 12px;
   background: rgba(167, 139, 250, 0.1);
-  color: #a78bfa;
+  color: var(--text-accent);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.3s;
@@ -350,14 +350,14 @@ function goLogin() {
 .error-msg {
   margin: -4px 0 0;
   font-size: 13px;
-  color: #f87171;
+  color: var(--color-error);
   text-align: center;
 }
 
 .success-msg {
   margin: -4px 0 0;
   font-size: 13px;
-  color: #6ee7b7;
+  color: var(--color-success);
   text-align: center;
 }
 
@@ -365,8 +365,8 @@ function goLogin() {
   height: 46px;
   border: none;
   border-radius: 12px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
@@ -380,7 +380,7 @@ function goLogin() {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, #764ba2, #f093fb);
+  background: var(--btn-primary-hover);
   opacity: 0;
   transition: opacity 0.3s;
 }
@@ -403,13 +403,13 @@ function goLogin() {
   left: 40px;
   bottom: 20px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-dim);
   cursor: pointer;
   user-select: none;
   transition: color 0.2s;
 }
 
 .login-link:hover {
-  color: #a78bfa;
+  color: var(--text-accent);
 }
 </style>

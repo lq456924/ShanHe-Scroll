@@ -74,6 +74,16 @@ async function handleBan(user: any) {
   } catch (err: any) { alert(err.message) }
 }
 
+async function handleToggleRole(user: any) {
+  const newRole = user.role === 1 ? 0 : 1
+  const roleLabel = newRole === 1 ? '审核员' : '普通用户'
+  if (!confirm(`确定将「${user.username}」的角色改为「${roleLabel}」吗？`)) return
+  try {
+    await api.updateUserRole(user.id, newRole)
+    await loadUsers()
+  } catch (err: any) { alert(err.message) }
+}
+
 async function handleDeleteUser(user: any) {
   if (!confirm(`⚠️ 确定永久删除「${user.username}」吗？\n\n此操作不可恢复！将同时删除该用户的所有相册、漂流瓶等数据。`)) return
   if (!confirm(`再次确认：真的要删除「${user.username}」吗？`)) return
@@ -147,8 +157,8 @@ function switchTab(t: typeof tab.value) {
 
         <table class="data-table">
           <thead><tr>
-            <th>ID</th><th>用户名</th><th>昵称</th><th>邮箱</th><th>角色</th><th>状态</th>
-            <th v-if="role >= 2" style="width:200px">操作</th>
+            <th style="width:60px">ID</th><th>用户名</th><th>昵称</th><th style="width:180px">邮箱</th><th style="width:70px">角色</th><th style="width:60px">状态</th>
+            <th v-if="role >= 2" style="width:350px">操作</th>
           </tr></thead>
           <tbody>
             <tr v-for="u in filteredUsers" :key="u.id" :class="{ banned: u.status === 1 }">
@@ -158,10 +168,17 @@ function switchTab(t: typeof tab.value) {
               <td>{{ u.email || '-' }}</td>
               <td>{{ {0:'用户',1:'审核员',2:'管理员'}[u.role] }}</td>
               <td><span :class="u.status===1?'badge-danger':'badge-ok'">{{ u.status===1?'封禁':'正常' }}</span></td>
-              <td v-if="role >= 2">
-                <button class="btn-sm" @click="handleResetPwd(u)">改密</button>
-                <button :class="u.status===1?'btn-sm-ok':'btn-sm-danger'" @click="handleBan(u)">{{ u.status===1?'解封':'封禁' }}</button>
-                <button v-if="u.role < 2" class="btn-sm-delete" @click="handleDeleteUser(u)">删除</button>
+              <td v-if="role >= 2" class="actions-cell">
+                <div class="actions-group">
+                  <button v-if="u.role < 2" :class="['act-btn', u.role === 1 ? 'act-down' : 'act-up']" @click="handleToggleRole(u)">
+                    {{ u.role === 1 ? '⬇ 降级' : '⬆ 升级' }}
+                  </button>
+                  <button class="act-btn act-pwd" @click="handleResetPwd(u)">🔑 改密</button>
+                  <button :class="['act-btn', u.status === 1 ? 'act-unban' : 'act-ban']" @click="handleBan(u)">
+                    {{ u.status === 1 ? '✅ 解封' : '🚫 封禁' }}
+                  </button>
+                  <button v-if="u.role < 2" class="act-btn act-del" @click="handleDeleteUser(u)">🗑 删除</button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -248,7 +265,7 @@ function switchTab(t: typeof tab.value) {
 <style scoped>
 .admin-page {
   min-height: calc(100vh - 73px);
-  background: linear-gradient(160deg, #f0f4ff, #f8f5ff, #f5f0fa);
+  background: var(--bg-page);
 }
 
 .admin-container {
@@ -257,70 +274,104 @@ function switchTab(t: typeof tab.value) {
   padding: 32px 24px;
 }
 
-.admin-container h1 { font-size: 24px; color: #1a1a2e; margin-bottom: 4px; }
-.admin-role { color: #888; font-size: 14px; margin: 0 0 24px; }
+.admin-container h1 { font-size: 24px; color: var(--text-heading); margin-bottom: 4px; }
+.admin-role { color: var(--text-muted); font-size: 14px; margin: 0 0 24px; }
 
 /* 标签栏 */
-.tab-bar { display: flex; gap: 4px; margin-bottom: 24px; background: #e8ecf1; border-radius: 10px; padding: 4px; }
+.tab-bar { display: flex; gap: 4px; margin-bottom: 24px; background: var(--border-subtle); border-radius: 10px; padding: 4px; }
 .tab-bar button {
   flex: 1; padding: 10px; border: none; background: transparent; border-radius: 8px;
-  font-size: 14px; color: #666; cursor: pointer; transition: all 0.2s;
+  font-size: 14px; color: var(--text-label); cursor: pointer; transition: all 0.2s;
 }
-.tab-bar button.active { background: #fff; color: #667eea; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.tab-bar button.active { background: var(--bg-card); color: var(--text-accent); font-weight: 600; box-shadow: var(--shadow-card); }
 
 /* 工具栏 */
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
-.search-input { flex: 1; height: 40px; padding: 0 14px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; }
-.search-input:focus { border-color: #667eea; }
+.search-input { flex: 1; height: 40px; padding: 0 14px; border: 1px solid var(--border-input); border-radius: 8px; font-size: 14px; outline: none; }
+.search-input:focus { border-color: var(--border-input-focus); }
 
 /* 表格 */
-.data-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.04); }
-.data-table th { background: #f8f9ff; padding: 12px 14px; text-align: left; font-size: 13px; color: #666; font-weight: 600; }
-.data-table td { padding: 10px 14px; font-size: 14px; color: #333; border-top: 1px solid #f0f0f0; }
-.data-table tr.banned td { color: #ccc; text-decoration: line-through; }
+.data-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-card); }
+.data-table th { background: var(--bg-panel); padding: 12px 14px; text-align: left; font-size: 13px; color: var(--text-label); font-weight: 600; }
+.data-table td { padding: 10px 14px; font-size: 14px; color: var(--text-body); border-top: 1px solid var(--border-divider); }
+.data-table tr.banned td { color: var(--text-dim); text-decoration: line-through; }
 
-.badge-ok { color: #27ae60; font-weight: 500; }
-.badge-danger { color: #e74c3c; font-weight: 500; }
+.badge-ok { color: var(--color-success); font-weight: 500; }
+.badge-danger { color: var(--color-error); font-weight: 500; }
 
 .btn-primary {
-  padding: 8px 20px; border: none; border-radius: 8px;
-  background: linear-gradient(135deg, #667eea, #764ba2); color: #fff;
-  font-size: 14px; font-weight: 500; cursor: pointer;
+  height: 38px; padding: 0 20px; border: none; border-radius: 8px;
+  background: var(--btn-primary); color: var(--btn-primary-text);
+  font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s;
 }
-.btn-primary:hover { opacity: 0.9; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary:hover { opacity: 0.85; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.35); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
-.btn-sm { padding: 4px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #667eea; font-size: 12px; cursor: pointer; margin-right: 6px; }
-.btn-sm-danger { padding: 4px 12px; border: none; border-radius: 6px; background: #fee; color: #e74c3c; font-size: 12px; cursor: pointer; }
-.btn-sm-ok { padding: 4px 12px; border: none; border-radius: 6px; background: #e8f8e8; color: #27ae60; font-size: 12px; cursor: pointer; }
+/* ---- 操作按钮组 ---- */
+.actions-cell { padding: 6px 10px !important; }
+.actions-group {
+  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+}
 
-.btn-sm-delete { padding: 4px 12px; border: none; border-radius: 6px; background: #fff0f0; color: #e74c3c; font-size: 12px; cursor: pointer; margin-left: 6px; }
-.btn-sm-delete:hover { background: #ffe0e0; }
+.act-btn {
+  height: 32px; padding: 0 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid transparent; border-radius: 8px;
+  font-size: 13px; cursor: pointer; transition: all 0.2s;
+  background: var(--bg-input); color: var(--text-body); flex-shrink: 0;
+  line-height: 1; white-space: nowrap; font-weight: 500;
+}
+.act-btn:hover  { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.08); }
+.act-btn:active { transform: translateY(0); }
 
-.empty { text-align: center; color: #aaa; padding: 40px 0; font-size: 14px; }
+/* 升级 */
+.act-up  { background: #f0f0ff; color: #667eea; border-color: #d8dcff; }
+.act-up:hover  { background: #667eea; color: var(--btn-primary-text); border-color: #667eea; }
+
+/* 降级 */
+.act-down { background: #fff8f0; color: #e67e22; border-color: #ffe8cc; }
+.act-down:hover { background: #e67e22; color: var(--btn-primary-text); border-color: #e67e22; }
+
+/* 改密 */
+.act-pwd { background: #f0faf0; color: #3b82f6; border-color: #d0e8d0; }
+.act-pwd:hover { background: #3b82f6; color: var(--btn-primary-text); border-color: #3b82f6; }
+
+/* 封禁 */
+.act-ban { background: #fff0f0; color: #ef4444; border-color: #fdd; }
+.act-ban:hover { background: #ef4444; color: var(--btn-primary-text); border-color: #ef4444; }
+
+/* 解封 */
+.act-unban { background: #e8f8e8; color: #22c55e; border-color: #c8ecc8; }
+.act-unban:hover { background: #22c55e; color: var(--btn-primary-text); border-color: #22c55e; }
+
+/* 删除 */
+.act-del { background: #fff5f5; color: #dc2626; border-color: #fee2e2; }
+.act-del:hover { background: #dc2626; color: var(--btn-primary-text); border-color: #dc2626; }
+
+.empty { text-align: center; color: var(--text-dim); padding: 40px 0; font-size: 14px; }
 
 /* 审核列表 */
 .review-list { display: flex; flex-direction: column; gap: 12px; }
-.review-item { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 6px rgba(0,0,0,0.04); }
-.review-title { font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px; }
-.review-content { font-size: 14px; color: #555; line-height: 1.7; margin-bottom: 8px; }
+.review-item { background: var(--bg-card); border-radius: 12px; padding: 18px 20px; box-shadow: var(--shadow-card); }
+.review-title { font-size: 16px; font-weight: 600; color: var(--text-heading); margin-bottom: 8px; }
+.review-content { font-size: 14px; color: var(--text-body); line-height: 1.7; margin-bottom: 8px; }
 .review-img { max-height: 200px; border-radius: 8px; margin-bottom: 8px; }
-.review-meta { display: flex; gap: 16px; font-size: 12px; color: #999; margin-bottom: 12px; }
+.review-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-dim); margin-bottom: 12px; }
 .review-actions { display: flex; gap: 10px; }
-.btn-approve { padding: 6px 20px; border: none; border-radius: 6px; background: #27ae60; color: #fff; font-size: 13px; cursor: pointer; }
+.btn-approve { padding: 6px 20px; border: none; border-radius: 6px; background: var(--color-success); color: #fff; font-size: 13px; cursor: pointer; }
 .btn-approve:hover { opacity: 0.9; }
-.btn-reject { padding: 6px 20px; border: none; border-radius: 6px; background: #e74c3c; color: #fff; font-size: 13px; cursor: pointer; }
+.btn-reject { padding: 6px 20px; border: none; border-radius: 6px; background: var(--color-error); color: #fff; font-size: 13px; cursor: pointer; }
 .btn-reject:hover { opacity: 0.9; }
 
 /* 弹窗 */
-.modal-mask { position: fixed; inset: 0; z-index: 500; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; }
-.modal-box { width: 420px; background: #fff; border-radius: 14px; padding: 24px 28px; box-shadow: 0 16px 48px rgba(0,0,0,0.2); }
+.modal-mask { position: fixed; inset: 0; z-index: 500; background: var(--modal-overlay); display: flex; align-items: center; justify-content: center; }
+.modal-box { width: 420px; background: var(--bg-card); border-radius: 14px; padding: 24px 28px; box-shadow: var(--shadow-modal); }
 .modal-box h3 { margin: 0 0 16px; font-size: 18px; }
 .field { margin-bottom: 12px; }
-.field label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
-.field input, .field select { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; }
-.field input:focus, .field select:focus { border-color: #667eea; }
-.error-msg { color: #e74c3c; font-size: 13px; }
+.field label { display: block; font-size: 13px; color: var(--text-label); margin-bottom: 4px; }
+.field input, .field select { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border-input); border-radius: 8px; font-size: 14px; outline: none; }
+.field input:focus, .field select:focus { border-color: var(--border-input-focus); }
+.error-msg { color: var(--color-error); font-size: 13px; }
 .btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.btn-cancel { padding: 8px 16px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #666; font-size: 14px; cursor: pointer; }
+.btn-cancel { padding: 8px 16px; border: 1px solid var(--border-input); border-radius: 8px; background: var(--bg-card); color: var(--text-label); font-size: 14px; cursor: pointer; }
 </style>

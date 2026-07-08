@@ -23,14 +23,11 @@ public class FileController {
     }
 
     /**
-     * 多文件上传（最多 9 张）。
+     * 多文件上传。
      */
     @PostMapping("/upload/batch")
     public ApiResponse<List<String>> uploadBatch(@RequestParam("files") List<MultipartFile> files) {
-        if (files.size() > 9) {
-            throw new RuntimeException("单次最多上传 9 张图片");
-        }
-        List<String> urls = files.stream().map(fileService::store).toList();
+        List<String> urls = files.parallelStream().map(fileService::store).toList();
         return ApiResponse.ok(urls);
     }
 }

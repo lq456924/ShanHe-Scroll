@@ -1,22 +1,146 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { getRegionsByLevel, getRegionsByParent, getAttractions, getAttractionDetail, type Region, type Attraction } from '@/api/travel'
+import { getRegionsByLevel, getRegionsByParent, getAttractions, getAttractionDetail, getStats, search as searchApi, type Region, type Attraction, type SearchResult, type SiteStats } from '@/api/travel'
+import { useTheme } from '@/composables/useTheme'
 import http, { extractData } from '@/api'
 
 const router = useRouter()
+const { theme } = useTheme()
+
+// 地图颜色根据主题切换
+const m = computed(() => theme.value === 'dark' ? {
+  area: 'rgba(255,255,255,0.06)',
+  border: 'rgba(255,255,255,0.12)',
+  label: 'rgba(255,255,255,0.6)',
+  emphasisLabel: '#fff',
+  dimArea: 'rgba(255,255,255,0.03)',
+  dimBorder: 'rgba(255,255,255,0.06)',
+  dimLabel: 'rgba(255,255,255,0.2)',
+  highlight: 'rgba(167,139,250,0.6)',
+} : {
+  area: 'rgba(0,0,0,0.04)',
+  border: 'rgba(0,0,0,0.15)',
+  label: 'rgba(0,0,0,0.45)',
+  emphasisLabel: '#333',
+  dimArea: 'rgba(0,0,0,0.02)',
+  dimBorder: 'rgba(0,0,0,0.08)',
+  dimLabel: 'rgba(0,0,0,0.15)',
+  highlight: 'rgba(102,126,234,0.5)',
+})
+
+// ---- 搜索 ----
+const searchOpen = ref(false)
+const searchKeyword = ref('')
+const searchResults = ref<SearchResult[]>([])
+const searchFocused = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  const kw = searchKeyword.value.trim()
+  if (!kw) {
+    searchResults.value = []
+    searchOpen.value = false
+    return
+  }
+  searchTimer = window.setTimeout(async () => {
+    try {
+      searchResults.value = await searchApi(kw)
+      searchOpen.value = searchResults.value.length > 0
+    } catch { searchResults.value = [] }
+  }, 200)
+}
+
+function onSearchFocus() {
+  searchFocused.value = true
+  if (searchKeyword.value.trim() && searchResults.value.length) searchOpen.value = true
+}
+
+function onSearchBlur() {
+  // 延迟关闭，让点击事件先触发
+  setTimeout(() => { searchFocused.value = false; searchOpen.value = false }, 150)
+}
+
+async function onSearchSelect(r: SearchResult) {
+  searchOpen.value = false
+  searchKeyword.value = r.name
+  searchResults.value = []
+
+  // 需要定位的省份和城市
+  const provinceId = r.parentId    // 省级 ID
+  const cityRegionId = r.regionId // 城市 ID
+  const attractionId = r.type === 'attraction' ? r.id : null
+
+  // 设置面包屑：先找省份名
+  const provinceName = r.parentName || ''
+  const cityName = r.regionName || r.name
+
+  // 面包屑
+  currentLevel.value = provinceId
+  breadcrumb.value = [
+    { name: '中国地图', id: 'china' },
+    { name: provinceName, id: provinceId },
+  ]
+
+  // 渲染省份地图
+  await renderProvince(provinceId)
+
+  // 匹配城市并选中
+  let cityRegion: Region | undefined
+  for (const [, region] of citiesMap) {
+    if (region.id === cityRegionId) {
+      cityRegion = region
+      break
+    }
+  }
+  if (!cityRegion) {
+    // 兜底：用名称匹配
+    cityRegion = [...citiesMap.values()].find((c) => c.id === cityRegionId)
+  }
+
+  if (cityRegion) {
+    selectedCity.value = cityRegion
+    attractionLoading.value = true
+    try {
+      attractions.value = await getAttractions(cityRegionId)
+    } catch { attractions.value = [] }
+    attractionLoading.value = false
+  }
+
+  // 如果是景点搜索结果，直接通过详情接口打开（不依赖景点列表）
+  if (attractionId) {
+    openDetail({ id: attractionId } as Attraction)
+  }
+}
 
 // ---- 状态 ----
 const chartRef = ref<HTMLDivElement>()
 const loading = ref(false)
 const attractionLoading = ref(false)
+const zoomPercent = ref(120) // 初始缩放百分比
+const stats = ref<SiteStats | null>(null)
 
 // 层级：'china' | provinceId
 const currentLevel = ref<'china' | number>('china')
 const breadcrumb = ref<{ name: string; id: number | 'china' }[]>([])
 const selectedCity = ref<Region | null>(null)
 const attractions = ref<Attraction[]>([])
+const categoryFilter = ref('')
+
+const categoryOptions = [
+  { value: '', label: '全部' },
+  { value: 'attraction', label: '景点' },
+  { value: 'food', label: '美食' },
+  { value: 'photo_spot', label: '其他' },
+]
+
+const categoryLabels: Record<string, string> = {
+  attraction: '景点',
+  food: '美食',
+  photo_spot: '其他',
+}
 
 // ---- 景点详情 ----
 const showDetail = ref(false)
@@ -47,6 +171,7 @@ const addError = ref('')
 const addSuccess = ref('')
 const addForm = ref({
   name: '',
+  category: 'attraction',
   description: '',
   address: '',
   image: '',
@@ -57,15 +182,27 @@ const addForm = ref({
 async function submitAttraction() {
   addError.value = ''
   addSuccess.value = ''
-  if (!addForm.value.name.trim()) {
-    addError.value = '请输入景点名称'
-    return
+
+  const required: [string, string][] = [
+    ['category', '请选择分类'],
+    ['name', '请输入名称'],
+    ['description', '请输入描述'],
+    ['address', '请输入地址'],
+    ['recommendMonth', '请输入推荐月份'],
+    ['tips', '请输入游玩提示'],
+  ]
+  for (const [field, msg] of required) {
+    if (!(addForm.value as any)[field]?.trim()) {
+      addError.value = msg
+      return
+    }
   }
 
   addLoading.value = true
   try {
     await http.post('/travel/attractions', {
       regionId: selectedCity.value?.id,
+      category: addForm.value.category,
       name: addForm.value.name.trim(),
       description: addForm.value.description.trim(),
       address: addForm.value.address.trim(),
@@ -75,7 +212,7 @@ async function submitAttraction() {
     }).then(extractData)
 
     addSuccess.value = '提交成功！审核通过后将展示在列表中'
-    addForm.value = { name: '', description: '', address: '', image: '', recommendMonth: '', tips: '' }
+    addForm.value = { name: '', category: 'attraction', description: '', address: '', image: '', recommendMonth: '', tips: '' }
     setTimeout(() => { showAddForm.value = false; addSuccess.value = '' }, 1500)
   } catch (err: any) {
     addError.value = err.message || '提交失败'
@@ -192,6 +329,18 @@ function goBackOnBlank(e: any) {
 // ---- 主图表渲染 ----
 let chartInstance: echarts.ECharts | null = null
 
+// 面积小、名称长的省份：GeoJSON 全称 → 显示短名
+const provinceShortName: Record<string, string> = {
+  '香港特别行政区': '香港',
+  '澳门特别行政区': '澳门',
+  '内蒙古自治区': '内蒙古',
+  '广西壮族自治区': '广西',
+  '西藏自治区': '西藏',
+  '宁夏回族自治区': '宁夏',
+  '新疆维吾尔自治区': '新疆',
+  '黑龙江省': '黑龙江',
+}
+
 async function renderChina() {
   if (!chartRef.value) return
   loading.value = true
@@ -233,28 +382,38 @@ async function renderChina() {
   if (!chartInstance) {
     chartInstance = echarts.init(chartRef.value)
     chartInstance.on('click', onMapClick)
+    chartInstance.on('georoam', () => {
+      const opt = chartInstance!.getOption() as any
+      zoomPercent.value = Math.round((opt.series?.[0]?.zoom || 1.2) * 100)
+    })
   }
 
   chartInstance.setOption({
     tooltip: {
       trigger: 'item',
-      formatter: '{b}',
+      formatter: (p: any) => provinceShortName[p.name] || p.name,
     },
     series: [
       {
         type: 'map',
         map: 'china',
         roam: true,
+        scaleLimit: { min: 1, max: 4 },
         zoom: 1.2,
         center: [104.5, 36],
-        label: { show: true, fontSize: 10, color: 'rgba(255,255,255,0.6)' },
+        label: {
+          show: true,
+          fontSize: 10,
+          color: m.value.label,
+          formatter: (p: any) => provinceShortName[p.name] || p.name,
+        },
         itemStyle: {
-          areaColor: 'rgba(255,255,255,0.06)',
-          borderColor: 'rgba(255,255,255,0.12)',
+          areaColor: m.value.area,
+          borderColor: m.value.border,
           borderWidth: 1,
         },
         emphasis: {
-          label: { show: true, fontSize: 13, fontWeight: 'bold', color: '#fff' },
+          label: { show: true, fontSize: 13, fontWeight: 'bold', color: m.value.emphasisLabel },
           itemStyle: { areaColor: 'rgba(167,139,250,0.3)' },
         },
         select: {
@@ -335,18 +494,18 @@ async function renderProvince(provinceId: number) {
           map: mapName,
           roam: true,
           zoom: 1.2,
-          label: { show: true, fontSize: 11, color: 'rgba(255,255,255,0.6)' },
+          label: { show: true, fontSize: 11, color: m.value.label },
           itemStyle: {
-            areaColor: 'rgba(255,255,255,0.06)',
-            borderColor: 'rgba(255,255,255,0.12)',
+            areaColor: m.value.area,
+            borderColor: m.value.border,
             borderWidth: 1,
           },
           emphasis: {
-            label: { show: true, fontSize: 14, fontWeight: 'bold', color: '#fff' },
+            label: { show: true, fontSize: 14, fontWeight: 'bold', color: m.value.emphasisLabel },
             itemStyle: { areaColor: 'rgba(167,139,250,0.3)' },
           },
           select: {
-            label: { show: true, color: '#fff' },
+            label: { show: true, color: m.value.emphasisLabel },
             itemStyle: { areaColor: 'rgba(167,139,250,0.5)' },
           },
           selectedMode: 'single',
@@ -423,9 +582,9 @@ async function onMapClick(params: any) {
     if (info) {
       const dimData = geo.features.map((feat: any) => {
         if (feat.properties.name === provinceName) {
-          return { name: feat.properties.name, itemStyle: { areaColor: 'rgba(167,139,250,0.6)', color: '#fff' }, label: { color: '#fff', fontSize: 16, fontWeight: 'bold' } }
+          return { name: feat.properties.name, itemStyle: { areaColor: m.value.highlight, color: m.value.emphasisLabel }, label: { color: m.value.emphasisLabel, fontSize: 16, fontWeight: 'bold' } }
         }
-        return { name: feat.properties.name, itemStyle: { areaColor: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.06)' }, label: { color: 'rgba(255,255,255,0.2)', fontSize: 8 } }
+        return { name: feat.properties.name, itemStyle: { areaColor: m.value.dimArea, borderColor: m.value.dimBorder }, label: { color: m.value.dimLabel, fontSize: 8 } }
       })
       chartInstance!.setOption({
         series: [{
@@ -470,7 +629,7 @@ async function onMapClick(params: any) {
       selectedCity.value = cityRegion
       attractionLoading.value = true
       try {
-        attractions.value = await getAttractions(cityRegion.id)
+        attractions.value = await getAttractions(cityRegion.id, undefined, categoryFilter.value || undefined)
       } catch {
         attractions.value = []
       }
@@ -478,6 +637,18 @@ async function onMapClick(params: any) {
     }
   }
 }
+
+// 分类切换时重新加载景点
+watch(categoryFilter, async () => {
+  if (!selectedCity.value) return
+  attractionLoading.value = true
+  try {
+    attractions.value = await getAttractions(selectedCity.value.id, undefined, categoryFilter.value || undefined)
+  } catch {
+    attractions.value = []
+  }
+  attractionLoading.value = false
+})
 
 // ---- 面包屑返回 ----
 async function goToLevel(item: { name: string; id: number | 'china' }) {
@@ -512,9 +683,9 @@ onMounted(async () => {
   try {
     await initProvinces()
   } catch {
-    // 后端未启动时省份数据为空，地图仍可正常展示
     console.warn('获取省份数据失败，后端可能未启动')
   }
+  try { stats.value = await getStats() } catch { /* 统计非关键 */ }
   await renderChina()
   window.addEventListener('resize', handleResize)
 })
@@ -522,6 +693,26 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   chartInstance?.dispose()
   window.removeEventListener('resize', handleResize)
+})
+
+// 主题切换时仅更新地图配色，不重建地图、不重加载数据
+function applyMapColors() {
+  if (!chartInstance) return
+  chartInstance.setOption({
+    series: [{
+      label: { color: m.value.label },
+      itemStyle: {
+        areaColor: m.value.area,
+        borderColor: m.value.border,
+      },
+      emphasis: { label: { color: m.value.emphasisLabel } },
+      select: { label: { color: m.value.emphasisLabel } },
+    }],
+  })
+}
+
+watch(theme, () => {
+  applyMapColors()
 })
 </script>
 
@@ -535,25 +726,75 @@ onBeforeUnmount(() => {
       <div class="decor decor-4"></div>
     </div>
 
-    <!-- 面包屑 -->
-    <div v-if="breadcrumb.length" class="breadcrumb-bar">
-      <span
-        v-for="(item, idx) in breadcrumb"
-        :key="item.id"
-        class="breadcrumb-item"
-        :class="{ clickable: idx < breadcrumb.length - 1 }"
-        @click="idx < breadcrumb.length - 1 && goToLevel(item)"
-      >
-        {{ item.name }}
-        <span v-if="idx < breadcrumb.length - 1" class="separator"> &gt; </span>
-      </span>
-    </div>
+    <!-- 面包屑 + 统计 + 搜索 -->
+    <div class="top-bar">
+      <div class="top-bar-left">
+        <div v-if="breadcrumb.length" class="breadcrumb-bar">
+          <span
+            v-for="(item, idx) in breadcrumb"
+            :key="item.id"
+            class="breadcrumb-item"
+            :class="{ clickable: idx < breadcrumb.length - 1 }"
+            @click="idx < breadcrumb.length - 1 && goToLevel(item)"
+          >
+            {{ item.name }}
+            <span v-if="idx < breadcrumb.length - 1" class="separator"> &gt; </span>
+          </span>
+        </div>
+      </div>
 
+      <div class="top-bar-right">
+        <div v-if="stats" class="stats-bar">
+          <span>🏔 {{ stats.provinces }}省</span>
+          <span class="stats-dot">·</span>
+          <span>🏙 {{ stats.cities }}城</span>
+          <span class="stats-dot">·</span>
+          <span>📍 {{ stats.attractions.toLocaleString() }}个景点</span>
+          <span class="stats-dot">·</span>
+          <span>📸 {{ stats.albums.toLocaleString() }}个相册</span>
+        </div>
+
+        <div class="search-bar">
+        <div class="search-input-wrapper">
+          <span class="search-icon">🔍</span>
+          <input
+            v-model="searchKeyword"
+            type="text"
+            class="search-input"
+            placeholder="搜索城市或景区..."
+            @input="onSearchInput"
+            @focus="onSearchFocus"
+            @blur="onSearchBlur"
+          />
+          <span v-if="searchKeyword" class="search-clear" @mousedown.prevent="searchKeyword = ''; searchOpen = false">✕</span>
+        </div>
+        <div v-if="searchOpen && searchResults.length" class="search-dropdown">
+          <div
+            v-for="r in searchResults"
+            :key="r.type + r.id"
+            class="search-item"
+            @mousedown.prevent="onSearchSelect(r)"
+          >
+            <span class="search-type-tag" :class="r.type === 'city' ? 'tag-city' : 'tag-attr'">
+              {{ r.type === 'city' ? '城' : categoryLabels[r.category || ''] || '景' }}
+            </span>
+            <div class="search-item-info">
+              <div class="search-item-name">{{ r.name }}</div>
+              <div class="search-item-path">
+                {{ r.parentName }} · {{ r.type === 'city' ? r.name : r.regionName }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
     <div class="home-content" :class="{ 'has-attractions': selectedCity }">
       <!-- 地图区域 -->
       <div class="map-section">
         <div v-if="loading" class="loading-mask">加载中...</div>
         <div ref="chartRef" class="chart-container"></div>
+        <div class="zoom-badge">{{ zoomPercent }}%</div>
       </div>
 
       <!-- 景区列表 -->
@@ -561,9 +802,18 @@ onBeforeUnmount(() => {
         <div class="panel-header">
           <h3 class="panel-title">{{ selectedCity.name }} — 打卡点推荐</h3>
           <div class="panel-actions">
-            <button class="add-btn" @click="showAddForm = true">+ 添加景点</button>
+            <button class="add-btn" @click="showAddForm = true">+ 添加打卡点</button>
             <button class="album-btn" @click="goCreateAlbum">创建相册</button>
           </div>
+        </div>
+        <div class="category-tabs">
+          <span
+            v-for="opt in categoryOptions"
+            :key="opt.value"
+            class="category-tab"
+            :class="{ active: categoryFilter === opt.value }"
+            @click="categoryFilter = opt.value"
+          >{{ opt.label }}</span>
         </div>
         <div v-if="attractionLoading" class="loading-text">查询中...</div>
         <div v-else-if="attractions.length === 0" class="empty-text">
@@ -578,9 +828,16 @@ onBeforeUnmount(() => {
               :src="attr.image"
               class="attr-img"
               alt=""
+              loading="lazy"
+              decoding="async"
             />
             <div class="attr-info">
-              <div class="attr-name">{{ attr.name }}</div>
+              <div class="attr-name">
+                {{ attr.name }}
+                <span v-if="attr.category" class="category-tag" :class="'cat-' + attr.category">
+                  {{ categoryLabels[attr.category] || attr.category }}
+                </span>
+              </div>
               <div class="attr-desc">{{ attr.description }}</div>
               <div class="attr-meta">
                 <span v-if="attr.rating">⭐ {{ attr.rating }}</span>
@@ -607,9 +864,11 @@ onBeforeUnmount(() => {
             :src="img.url"
             :alt="'图片' + (i+1)"
             class="detail-img"
+            loading="lazy"
+            decoding="async"
           />
         </div>
-        <img v-else-if="detailAttraction.image" :src="detailAttraction.image" class="detail-img single" alt="" />
+        <img v-else-if="detailAttraction.image" :src="detailAttraction.image" class="detail-img single" alt="" loading="lazy" decoding="async" />
 
         <div v-if="detailLoading" class="detail-loading">加载详情...</div>
 
@@ -645,15 +904,23 @@ onBeforeUnmount(() => {
       <div class="modal-card">
         <h3>添加景点 — {{ selectedCity?.name }}</h3>
         <div class="field">
-          <label>景点名称 *</label>
-          <input v-model="addForm.name" placeholder="如：大雁塔" maxlength="100" />
+          <label>分类 *</label>
+          <select v-model="addForm.category" class="field-select">
+            <option v-for="opt in categoryOptions.slice(1)" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
         </div>
         <div class="field">
-          <label>描述</label>
+          <label>名称 *</label>
+          <input v-model="addForm.name" placeholder="如：大雁塔 / 羊肉泡馍" maxlength="100" />
+        </div>
+        <div class="field">
+          <label>描述 *</label>
           <textarea v-model="addForm.description" rows="3" placeholder="简要介绍该景点" maxlength="500"></textarea>
         </div>
         <div class="field">
-          <label>地址</label>
+          <label>地址 *</label>
           <input v-model="addForm.address" placeholder="详细地址" maxlength="200" />
         </div>
         <div class="field">
@@ -661,11 +928,11 @@ onBeforeUnmount(() => {
           <input v-model="addForm.image" placeholder="图片链接（选填）" maxlength="500" />
         </div>
         <div class="field">
-          <label>推荐月份</label>
+          <label>推荐月份 *</label>
           <input v-model="addForm.recommendMonth" placeholder="如：4-5月" maxlength="100" />
         </div>
         <div class="field">
-          <label>游玩提示</label>
+          <label>游玩提示 *</label>
           <textarea v-model="addForm.tips" rows="2" placeholder="小贴士" maxlength="500"></textarea>
         </div>
 
@@ -690,7 +957,7 @@ onBeforeUnmount(() => {
   height: calc(100vh - 73px);
   overflow: hidden;
   position: relative;
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+  background: var(--bg-page);
 }
 
 /* 装饰背景 */
@@ -713,7 +980,7 @@ onBeforeUnmount(() => {
 .decor-1 {
   width: 500px;
   height: 500px;
-  background: #667eea;
+  background: var(--decor-1);
   top: -200px;
   right: -150px;
   animation-delay: 0s;
@@ -722,7 +989,7 @@ onBeforeUnmount(() => {
 .decor-2 {
   width: 350px;
   height: 350px;
-  background: #764ba2;
+  background: var(--decor-2);
   bottom: -100px;
   left: -100px;
   animation-delay: -7s;
@@ -731,7 +998,7 @@ onBeforeUnmount(() => {
 .decor-3 {
   width: 280px;
   height: 280px;
-  background: #f093fb;
+  background: var(--decor-3);
   top: 40%;
   left: 30%;
   animation-delay: -14s;
@@ -740,7 +1007,7 @@ onBeforeUnmount(() => {
 .decor-4 {
   width: 200px;
   height: 200px;
-  background: #a78bfa;
+  background: var(--decor-4);
   top: 20%;
   right: 30%;
   animation-delay: -10s;
@@ -753,17 +1020,196 @@ onBeforeUnmount(() => {
   75% { transform: translate(-30px, -10px) scale(1.05); }
 }
 
-.breadcrumb-bar {
+/* ---- 搜索栏（在 top-bar 内） ---- */
+.search-bar {
   position: relative;
-  z-index: 1;
-  padding: 12px 24px;
-  font-size: 14px;
-  color: rgba(255,255,255,0.7);
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
   flex-shrink: 0;
+}
+
+.search-input-wrapper {
+  position: relative;
+  width: 260px;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 14px;
+  font-size: 16px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 36px 0 38px;
+  border: 1px solid var(--border-card);
+  border-radius: 18px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.3s;
+}
+
+.search-input::placeholder {
+  color: var(--text-dim);
+}
+
+.search-input:focus {
+  border-color: var(--border-input-focus);
+  background: var(--bg-card-hover);
+  box-shadow: var(--shadow-focus);
+}
+
+.search-clear {
+  position: absolute;
+  right: 14px;
+  font-size: 14px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.search-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+/* ---- 搜索结果下拉 ---- */
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 380px;
+  background: var(--modal-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-card);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow-modal);
+  z-index: 100;
+  animation: dropIn 0.15s ease;
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.search-item:last-child { border-bottom: none; }
+
+.search-item:hover {
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.search-type-tag {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tag-city {
+  background: rgba(102, 126, 234, 0.25);
+  color: #93a5ff;
+}
+
+.tag-attr {
+  background: rgba(240, 147, 251, 0.2);
+  color: #f5a3fb;
+}
+
+.search-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-item-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-item-path {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.top-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 24px;
+  background: var(--bg-card);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-divider);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  flex: 1;
+  min-width: 0;
+}
+
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.breadcrumb-bar {
+  color: var(--text-body);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.stats-dot {
+  color: var(--text-placeholder);
 }
 
 .breadcrumb-item {
@@ -772,18 +1218,18 @@ onBeforeUnmount(() => {
 }
 
 .breadcrumb-item.clickable {
-  color: #a78bfa;
+  color: var(--text-accent);
   cursor: pointer;
   font-weight: 500;
 }
 
 .breadcrumb-item.clickable:hover {
-  color: #f093fb;
+  color: var(--text-accent2);
 }
 
 .separator {
   margin: 0 8px;
-  color: rgba(255,255,255,0.3);
+  color: var(--text-dim);
 }
 
 .home-content {
@@ -809,6 +1255,23 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
+.zoom-badge {
+  position: absolute;
+  bottom: 16px;
+  right: 20px;
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+}
+
 .loading-mask {
   position: absolute;
   inset: 0;
@@ -819,17 +1282,18 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(4px);
   z-index: 10;
   font-size: 16px;
-  color: #a78bfa;
+  color: var(--text-accent);
   letter-spacing: 1px;
 }
 
-/* 景区面板 */
+/* 景区面板 —— 与登录卡片一致的玻璃材质 */
 .attractions-panel {
   width: 420px;
   flex-shrink: 0;
   overflow-y: auto;
-  background: linear-gradient(180deg, #f8f9ff 0%, #f0f2f8 100%);
-  border-left: 1px solid rgba(102, 126, 234, 0.1);
+  background: var(--bg-panel);
+  backdrop-filter: blur(24px);
+  border-left: 1px solid var(--border-subtle);
   padding: 24px 20px;
 }
 
@@ -837,16 +1301,13 @@ onBeforeUnmount(() => {
   margin: 0 0 20px;
   font-size: 18px;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-accent);
 }
 
 .loading-text,
 .empty-text {
   text-align: center;
-  color: #999;
+  color: var(--text-placeholder);
   padding: 60px 0;
   font-size: 14px;
 }
@@ -854,21 +1315,23 @@ onBeforeUnmount(() => {
 .attraction-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .attraction-card {
-  background: #fff;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.08);
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: default;
+  cursor: pointer;
 }
 
 .attraction-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.18);
+  background: var(--bg-card-hover);
+  border-color: var(--border-input-focus);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
 }
 
 .attr-img {
@@ -889,13 +1352,40 @@ onBeforeUnmount(() => {
 .attr-name {
   font-size: 17px;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--text-primary);
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.cat-attraction {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+}
+
+.cat-food {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.cat-photo_spot {
+  background: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
 }
 
 .attr-desc {
   font-size: 13px;
-  color: #777;
+  color: var(--text-muted);
   line-height: 1.7;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -908,7 +1398,7 @@ onBeforeUnmount(() => {
   gap: 16px;
   margin-top: 12px;
   font-size: 13px;
-  color: #666;
+  color: var(--text-label);
 }
 
 .attr-meta span {
@@ -921,8 +1411,9 @@ onBeforeUnmount(() => {
   margin-top: 10px;
   padding: 8px 12px;
   font-size: 12px;
-  color: #92400e;
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: var(--text-secondary);
+  background: rgba(240, 147, 251, 0.12);
+  border: 1px solid rgba(240, 147, 251, 0.15);
   border-radius: 8px;
   line-height: 1.5;
 }
@@ -944,10 +1435,10 @@ onBeforeUnmount(() => {
 
 .add-btn, .album-btn {
   padding: 6px 16px;
-  border: 1px solid #667eea;
+  border: 1px solid rgba(167, 139, 250, 0.4);
   border-radius: 8px;
-  background: #fff;
-  color: #667eea;
+  background: rgba(167, 139, 250, 0.1);
+  color: var(--text-accent);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -956,22 +1447,52 @@ onBeforeUnmount(() => {
 }
 
 .add-btn:hover, .album-btn:hover {
-  background: #667eea;
-  color: #fff;
+  background: rgba(167, 139, 250, 0.25);
+  border-color: #a78bfa;
+}
+
+.category-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.category-tab {
+  padding: 4px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  user-select: none;
+}
+.category-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+}
+.category-tab.active {
+  background: rgba(167, 139, 250, 0.15);
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.4);
 }
 
 .album-btn {
-  border-color: #764ba2;
-  color: #764ba2;
+  border-color: rgba(240, 147, 251, 0.4);
+  color: var(--text-accent2);
+  background: rgba(240, 147, 251, 0.1);
 }
 
 .album-btn:hover {
-  background: #764ba2;
-  color: #fff;
+  background: rgba(240, 147, 251, 0.25);
+  border-color: #f093fb;
 }
 
 .add-hint {
-  color: #667eea;
+  color: var(--text-accent);
   cursor: pointer;
   text-decoration: underline;
 }
@@ -981,7 +1502,8 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0;
   z-index: 500;
-  background: rgba(0,0,0,0.4);
+  background: var(--modal-overlay);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -991,16 +1513,18 @@ onBeforeUnmount(() => {
   width: 440px;
   max-height: 80vh;
   overflow-y: auto;
-  background: #fff;
-  border-radius: 14px;
+  background: var(--modal-bg);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--border-card);
+  border-radius: 16px;
   padding: 28px 32px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-modal);
 }
 
 .modal-card h3 {
   margin: 0 0 20px;
   font-size: 18px;
-  color: #1a1a2e;
+  color: var(--text-primary);
 }
 
 .modal-card .field {
@@ -1010,24 +1534,34 @@ onBeforeUnmount(() => {
 .modal-card label {
   display: block;
   font-size: 13px;
-  color: #666;
+  color: var(--text-label);
   margin-bottom: 4px;
 }
 
 .modal-card input,
-.modal-card textarea {
+.modal-card textarea,
+.modal-card select {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-input);
   border-radius: 8px;
   font-size: 14px;
   outline: none;
   font-family: inherit;
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.modal-card input::placeholder,
+.modal-card textarea::placeholder {
+  color: var(--text-placeholder);
 }
 
 .modal-card input:focus,
-.modal-card textarea:focus {
-  border-color: #667eea;
+.modal-card textarea:focus,
+.modal-card select:focus {
+  border-color: var(--border-input-focus);
+  background: var(--bg-input-focus);
 }
 
 .modal-actions {
@@ -1039,27 +1573,35 @@ onBeforeUnmount(() => {
 
 .btn-cancel {
   padding: 8px 20px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-input);
   border-radius: 8px;
-  background: #fff;
-  color: #666;
+  background: var(--bg-input);
+  color: var(--text-label);
   cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
 }
 
 .btn-submit {
   padding: 8px 20px;
   border: none;
   border-radius: 8px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
   font-weight: 500;
   cursor: pointer;
+  transition: opacity 0.2s;
 }
 
+.btn-submit:hover { opacity: 0.85; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.add-error { color: #e74c3c; font-size: 13px; margin: 8px 0 0; }
-.add-success { color: #27ae60; font-size: 13px; margin: 8px 0 0; }
+.add-error { color: var(--color-error); font-size: 13px; margin: 8px 0 0; }
+.add-success { color: var(--color-success); font-size: 13px; margin: 8px 0 0; }
 
 /* ---- 景点详情弹窗 ---- */
 .detail-card {
@@ -1067,9 +1609,11 @@ onBeforeUnmount(() => {
   width: 520px;
   max-height: 85vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--modal-bg);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--border-card);
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  box-shadow: var(--shadow-modal);
   animation: slideUp 0.3s ease;
 }
 
@@ -1086,8 +1630,8 @@ onBeforeUnmount(() => {
   height: 32px;
   border: none;
   border-radius: 50%;
-  background: rgba(0,0,0,0.35);
-  color: #fff;
+  background: var(--bg-card);
+  color: var(--text-primary);
   font-size: 16px;
   cursor: pointer;
   z-index: 10;
@@ -1097,7 +1641,7 @@ onBeforeUnmount(() => {
   transition: background 0.2s;
 }
 
-.detail-close:hover { background: rgba(0,0,0,0.6); }
+.detail-close:hover { background: var(--bg-card-hover); }
 
 .detail-images {
   display: flex;
@@ -1130,14 +1674,14 @@ onBeforeUnmount(() => {
 .detail-loading {
   text-align: center;
   padding: 40px;
-  color: #999;
+  color: var(--text-dim);
 }
 
 .detail-name {
   padding: 20px 24px 0;
   font-size: 22px;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--text-primary);
 }
 
 .detail-meta {
@@ -1145,7 +1689,7 @@ onBeforeUnmount(() => {
   gap: 18px;
   padding: 8px 24px 0;
   font-size: 14px;
-  color: #666;
+  color: var(--text-label);
 }
 
 .detail-section {
@@ -1154,13 +1698,13 @@ onBeforeUnmount(() => {
 
 .detail-section h4 {
   font-size: 14px;
-  color: #667eea;
+  color: var(--text-accent);
   margin: 0 0 6px;
 }
 
 .detail-section p {
   font-size: 14px;
-  color: #555;
+  color: var(--text-secondary);
   line-height: 1.7;
   margin: 0;
 }

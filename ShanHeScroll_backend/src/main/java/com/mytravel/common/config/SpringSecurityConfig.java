@@ -27,7 +27,13 @@ public class SpringSecurityConfig {
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/user/register/code", "/api/user/register", "/api/user/login").permitAll()
+                .requestMatchers(
+                    "/api/user/register/code",
+                    "/api/user/register",
+                    "/api/user/login",
+                    "/api/user/password/reset/code",
+                    "/api/user/password/reset"
+                ).permitAll()
                 .requestMatchers("/api/public/**").permitAll()
                 .requestMatchers("/uploads/**", "/photo/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/album/user/**").permitAll()

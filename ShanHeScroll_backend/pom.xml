@@ -8,11 +8,11 @@
         <version>4.0.6</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    <groupId>org.innovation</groupId>
-    <artifactId>demo</artifactId>
+    <groupId>com.mytravel</groupId>
+    <artifactId>shanhescroll</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>MyTravel</name>
-    <description>旅游社交平台后端</description>
+    <name>ShanHeScroll</name>
+    <description>山河卷 - 旅游社交平台后端</description>
     <url/>
     <licenses>
         <license/>

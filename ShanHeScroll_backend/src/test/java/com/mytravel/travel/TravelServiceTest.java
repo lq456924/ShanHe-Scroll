@@ -1,5 +1,10 @@
 package com.mytravel.travel;
 
+import com.mytravel.album.repository.AlbumRepository;
+import com.mytravel.travel.repository.RegionRepository;
+import com.mytravel.travel.repository.AttractionRepository;
+import com.mytravel.travel.repository.AttractionImageRepository;
+import com.mytravel.travel.service.TravelService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -25,6 +30,9 @@ class TravelServiceTest {
     @Mock
     private AttractionImageRepository attractionImageRepository;
 
+    @Mock
+    private AlbumRepository albumRepository;
+
     // ---- 地区查询 ----
 
     @Test
@@ -36,7 +44,7 @@ class TravelServiceTest {
 
         when(regionRepository.findByLevelOrderBySortOrder(2)).thenReturn(List.of(beijing));
 
-        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository);
+        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository, albumRepository);
         List<Region> result = service.getRegionsByLevel(2);
 
         assertEquals(1, result.size());
@@ -52,7 +60,7 @@ class TravelServiceTest {
 
         when(regionRepository.findByParentIdOrderBySortOrder(1L)).thenReturn(List.of(chaoyang));
 
-        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository);
+        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository, albumRepository);
         List<Region> result = service.getRegionsByParentId(1L);
 
         assertEquals(1, result.size());
@@ -70,8 +78,8 @@ class TravelServiceTest {
 
         when(attractionRepository.findByRegionIdAndReviewed(eq(1L), eq(1))).thenReturn(List.of(a));
 
-        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository);
-        List<Attraction> result = service.getAttractionsByRegionId(1L, "default");
+        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository, albumRepository);
+        List<Attraction> result = service.getAttractionsByRegionId(1L, "default", null);
 
         assertEquals(1, result.size());
         assertEquals("故宫", result.get(0).getName());
@@ -91,7 +99,7 @@ class TravelServiceTest {
         when(attractionImageRepository.findByAttractionIdOrderBySortOrder(1L))
                 .thenReturn(List.of(img));
 
-        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository);
+        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository, albumRepository);
         Attraction result = service.getAttractionById(1L);
 
         assertEquals("故宫", result.getName());
@@ -102,7 +110,7 @@ class TravelServiceTest {
     void shouldThrowWhenAttractionNotFound() {
         when(attractionRepository.findById(999L)).thenReturn(Optional.empty());
 
-        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository);
+        TravelService service = new TravelService(regionRepository, attractionRepository, attractionImageRepository, albumRepository);
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> service.getAttractionById(999L));
         assertTrue(ex.getMessage().contains("景点不存在"));

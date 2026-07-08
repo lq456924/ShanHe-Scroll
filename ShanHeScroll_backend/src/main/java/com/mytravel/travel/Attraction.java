@@ -23,6 +23,10 @@ public class Attraction {
     @Column(nullable = false, length = 100)
     private String name;
 
+    /** 分类：attraction=景点 food=美食 photo_spot=拍照留影（可扩展） */
+    @Column(nullable = false, length = 20)
+    private String category = "attraction";
+
     @Column(columnDefinition = "TEXT")
     private String description;
 

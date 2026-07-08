@@ -202,11 +202,11 @@ onMounted(() => {
 }
 
 .captcha-box {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 24px 28px 20px;
   width: 370px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-modal);
 }
 
 .captcha-header {
@@ -216,21 +216,21 @@ onMounted(() => {
   margin-bottom: 8px;
   font-size: 16px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-heading);
 }
 
 .captcha-close {
   border: none;
   background: none;
   font-size: 18px;
-  color: #999;
+  color: var(--text-dim);
   cursor: pointer;
   padding: 4px;
 }
 
 .captcha-hint {
   font-size: 13px;
-  color: #888;
+  color: var(--text-muted);
   margin-bottom: 14px;
 }
 
@@ -265,7 +265,7 @@ onMounted(() => {
 .slider-track {
   flex: 1;
   height: 40px;
-  background: #f0f0f0;
+  background: var(--border-input);
   border-radius: 20px;
   position: relative;
   overflow: hidden;
@@ -296,13 +296,13 @@ onMounted(() => {
   top: 2px;
   width: 36px;
   height: 36px;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
-  color: #667eea;
+  color: var(--text-accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   pointer-events: none;
   z-index: 1;
@@ -310,8 +310,8 @@ onMounted(() => {
 }
 
 .slider-thumb.verified {
-  background: #27ae60;
-  color: #fff;
+  background: var(--color-success);
+  color: var(--text-primary);
 }
 
 .verify-btn {
@@ -319,8 +319,8 @@ onMounted(() => {
   padding: 0 20px;
   border: none;
   border-radius: 20px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -334,13 +334,13 @@ onMounted(() => {
 }
 
 .verify-btn.done {
-  background: #27ae60;
+  background: var(--color-success);
 }
 
 .fail-msg {
   margin: 10px 0 0;
   font-size: 13px;
-  color: #e74c3c;
+  color: var(--color-error);
   text-align: center;
 }
 </style>

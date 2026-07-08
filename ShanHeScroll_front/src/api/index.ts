@@ -3,7 +3,7 @@ import type { AxiosResponse } from 'axios'
 
 const http = axios.create({
   baseURL: '/api',
-  timeout: 15000,
+  timeout: 60000,
 })
 
 // 统一响应结构
