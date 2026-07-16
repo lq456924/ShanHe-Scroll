@@ -98,6 +98,7 @@ async function handleChangePwd() {
     <div class="profile-header" v-if="profile">
       <img :src="profile.avatar || '/default-avatar.svg'" class="ph-avatar" alt="" />
       <h2 class="ph-name">{{ profile.nickname || profile.username }}</h2>
+      <p class="ph-id">🆔 ID：{{ profile.id }}</p>
       <p class="ph-bio" v-if="profile.bio">{{ profile.bio }}</p>
       <div class="ph-stats">
         <div class="stat"><strong>{{ myBottles.length }}</strong> <span>扔出</span></div>
@@ -230,6 +231,11 @@ async function handleChangePwd() {
 .ph-name {
   font-size: 22px; font-weight: 700;
   color: var(--text-primary); margin: 0 0 6px;
+}
+
+.ph-id {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-accent, #667eea); margin: 0 0 6px;
 }
 
 .ph-bio { font-size: 14px; color: var(--text-muted); margin: 0 0 20px; }

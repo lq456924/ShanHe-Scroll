@@ -150,6 +150,20 @@ public class DriftBottleService {
         DriftBottle bottle = bottleRepository.findById(bottleId)
                 .orElseThrow(() -> new RuntimeException("漂流瓶不存在"));
         bottle.setLikeCount(likeRepository.countByBottleId(bottle.getId()));
+
+        // 非匿名时填充发送者信息
+        if (bottle.getIsAnonymous() == 0) {
+            User sender = userRepository.findById(bottle.getSenderId()).orElse(null);
+            if (sender != null) {
+                DriftBottle.SenderInfo info = new DriftBottle.SenderInfo();
+                info.setId(sender.getId());
+                info.setUsername(sender.getUsername());
+                info.setNickname(sender.getNickname());
+                info.setAvatar(sender.getAvatar());
+                bottle.setSender(info);
+            }
+        }
+
         return bottle;
     }
 

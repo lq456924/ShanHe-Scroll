@@ -81,6 +81,8 @@ const createForm = ref({
   description: '',
   coverImage: '',
   regionId: null as number | null,
+  isShared: false,
+  inviteeIds: [''] as string[],
 })
 const uploadingCover = ref(false)
 
@@ -374,7 +376,7 @@ function openCreate() {
   selProvinceId.value = ''
   selCityId.value = ''
   availableCities.value = []
-  createForm.value = { title: '', description: '', coverImage: '', regionId: null }
+  createForm.value = { title: '', description: '', coverImage: '', regionId: null, isShared: false, inviteeIds: [''] }
   showCreate.value = true
 }
 
@@ -708,6 +710,18 @@ async function handleUploadCover(e: Event) {
   uploadingCover.value = false
 }
 
+function addInviteeRow() {
+  createForm.value.inviteeIds.push('')
+}
+
+function removeInviteeRow(index: number) {
+  if (createForm.value.inviteeIds.length <= 1) {
+    createForm.value.inviteeIds[0] = ''
+    return
+  }
+  createForm.value.inviteeIds.splice(index, 1)
+}
+
 async function handleCreate() {
   createError.value = ''
   if (!createForm.value.title.trim()) {
@@ -718,6 +732,15 @@ async function handleCreate() {
     createError.value = '请选择地点'
     return
   }
+  // 解析邀请 ID（过滤空值和无效数字）
+  const inviteeIds = createForm.value.isShared
+    ? createForm.value.inviteeIds.map(Number).filter(n => n > 0 && Number.isFinite(n))
+    : undefined
+  if (createForm.value.isShared && (!inviteeIds || inviteeIds.length === 0)) {
+    createError.value = '开启共同相册后请至少输入一个有效的用户ID'
+    return
+  }
+
   createLoading.value = true
   try {
     await createAlbum({
@@ -725,9 +748,11 @@ async function handleCreate() {
       title: createForm.value.title.trim(),
       description: createForm.value.description.trim() || undefined,
       coverImage: createForm.value.coverImage || undefined,
+      isShared: createForm.value.isShared,
+      inviteeIds,
     })
     showCreate.value = false
-    createForm.value = { title: '', description: '', coverImage: '', regionId: null }
+    createForm.value = { title: '', description: '', coverImage: '', regionId: null, isShared: false, inviteeIds: [''] }
     await loadAlbums()
   } catch (err: any) {
     createError.value = err.message || '创建失败'
@@ -789,7 +814,10 @@ async function handleCreate() {
               </div>
               <div class="card-body">
                 <button class="card-delete-btn" title="删除相册" @click="handleDeleteAlbum(album, $event)">🗑</button>
-                <div class="card-title">{{ album.title }}</div>
+                <div class="card-title">
+                  {{ album.title }}
+                  <span v-if="album.isShared" class="shared-badge" title="多人共同相册">👥</span>
+                </div>
                 <div class="card-meta">
                   <span v-if="album.regionId">{{ getCityName(album.regionId) }}</span>
                   <span>{{ album.photoCount || 0 }} 张照片</span>
@@ -844,6 +872,23 @@ async function handleCreate() {
             </label>
           </div>
           <img v-if="createForm.coverImage" :src="createForm.coverImage" class="cover-preview" alt="" />
+        </div>
+
+        <div class="field">
+          <label class="shared-label">
+            <input type="checkbox" v-model="createForm.isShared" />
+            设为多人共同相册
+          </label>
+        </div>
+
+        <div class="field" v-if="createForm.isShared">
+          <label>邀请用户ID</label>
+          <div v-for="(_, idx) in createForm.inviteeIds" :key="idx" class="invitee-row">
+            <input v-model="createForm.inviteeIds[idx]" type="number" min="1" placeholder="输入用户ID" />
+            <button type="button" class="btn-remove-invitee" @click="removeInviteeRow(idx)" title="移除">−</button>
+          </div>
+          <button type="button" class="btn-add-invitee" @click="addInviteeRow">+ 添加用户</button>
+          <span class="field-hint">被邀请的用户将在通知栏收到邀请，同意后即可共同管理相册</span>
         </div>
 
         <p v-if="createError" class="create-error">{{ createError }}</p>
@@ -1199,6 +1244,12 @@ async function handleCreate() {
   padding: 14px 16px;
 }
 
+.shared-badge {
+  font-size: 14px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 .card-title {
   font-size: 16px;
   font-weight: 600;
@@ -1333,10 +1384,31 @@ async function handleCreate() {
   background: var(--bg-input);
   color: var(--text-primary);
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+[data-theme="dark"] .location-row select {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+[data-theme="dark"] .location-row select option {
+  background: #1e1e2e;
+  color: #fff;
 }
 
 .location-row select:focus {
   border-color: var(--border-input-focus);
+}
+
+.location-row select option {
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
 .location-row select:disabled {
@@ -1382,6 +1454,75 @@ async function handleCreate() {
   color: var(--color-error);
   font-size: 13px;
   margin: 8px 0 0;
+}
+
+.shared-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px !important;
+  color: #555 !important;
+}
+
+.shared-label input {
+  width: auto !important;
+}
+
+.invitee-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.invitee-row input {
+  flex: 1;
+}
+
+.btn-remove-invitee {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  color: #e74c3c;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-remove-invitee:hover {
+  background: #fee;
+  border-color: #e74c3c;
+}
+
+.btn-add-invitee {
+  border: 1px dashed #667eea;
+  border-radius: 8px;
+  background: transparent;
+  color: #667eea;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-add-invitee:hover {
+  background: #f0edff;
+  border-style: solid;
+}
+
+.field-hint {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
 }
 
 .modal-actions {

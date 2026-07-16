@@ -29,3 +29,8 @@ export function getMyBottles() {
 export function getMyLikedBottles() {
   return http.get('/bottle/liked').then(extractData)
 }
+
+/** 获取指定漂流瓶详情（用于消息跳转查看） */
+export function getBottleDetail(id: number) {
+  return http.get(`/bottle/${id}`).then(extractData)
+}

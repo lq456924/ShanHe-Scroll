@@ -1,13 +1,51 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { getRegionsByLevel, getRegionsByParent, getAttractions, getAttractionDetail, getStats, search as searchApi, type Region, type Attraction, type SearchResult, type SiteStats } from '@/api/travel'
 import { useTheme } from '@/composables/useTheme'
 import http, { extractData } from '@/api'
 
 const router = useRouter()
+const route = useRoute()
 const { theme } = useTheme()
+
+// 当前用户 ID
+const currentUserId = (() => {
+  try {
+    const raw = localStorage.getItem('user')
+    if (raw) return JSON.parse(raw).id as number
+  } catch {}
+  return null
+})()
+
+// ---- 消息跳转：查看指定打卡点详情（复用已有弹窗） ----
+async function loadHighlightedAttraction() {
+  const id = route.query.highlight
+  if (!id) return
+  const numId = Number(id)
+  if (isNaN(numId)) return
+
+  detailLoading.value = true
+  try {
+    detailAttraction.value = await getAttractionDetail(numId)
+    showDetail.value = true
+  } catch {
+    router.replace({ path: '/' })
+  }
+  detailLoading.value = false
+}
+
+function closeDetail() {
+  showDetail.value = false
+  if (route.query.highlight) {
+    router.replace({ path: '/' })
+  }
+}
+
+watch(() => route.query.highlight, () => {
+  loadHighlightedAttraction()
+})
 
 // 地图颜色根据主题切换
 const m = computed(() => theme.value === 'dark' ? {
@@ -688,6 +726,7 @@ onMounted(async () => {
   try { stats.value = await getStats() } catch { /* 统计非关键 */ }
   await renderChina()
   window.addEventListener('resize', handleResize)
+  loadHighlightedAttraction()  // 从消息跳转过来的高亮打卡点
 })
 
 onBeforeUnmount(() => {
@@ -745,6 +784,8 @@ watch(theme, () => {
 
       <div class="top-bar-right">
         <div v-if="stats" class="stats-bar">
+          <span v-if="currentUserId" class="stats-user-id">🆔 我的ID：{{ currentUserId }}</span>
+          <span class="stats-dot">·</span>
           <span>🏔 {{ stats.provinces }}省</span>
           <span class="stats-dot">·</span>
           <span>🏙 {{ stats.cities }}城</span>
@@ -852,9 +893,9 @@ watch(theme, () => {
     </div>
 
     <!-- 景点详情弹窗 -->
-    <div v-if="showDetail" class="modal-overlay" @click.self="showDetail = false">
+    <div v-if="showDetail" class="modal-overlay" @click.self="closeDetail">
       <div class="detail-card" v-if="detailAttraction">
-        <button class="detail-close" @click="showDetail = false">✕</button>
+        <button class="detail-close" @click="closeDetail">✕</button>
 
         <!-- 图片轮播 -->
         <div class="detail-images" v-if="detailAttraction.images?.length">
@@ -1206,6 +1247,11 @@ watch(theme, () => {
   font-size: 13px;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+.stats-user-id {
+  color: var(--primary, #667eea);
+  font-weight: 700;
 }
 
 .stats-dot {

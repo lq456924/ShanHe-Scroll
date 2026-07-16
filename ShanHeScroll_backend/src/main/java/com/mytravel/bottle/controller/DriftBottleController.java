@@ -2,9 +2,11 @@ package com.mytravel.bottle.controller;
 
 import com.mytravel.common.ApiResponse;
 import com.mytravel.bottle.DriftBottle;
+import com.mytravel.bottle.repository.DriftBottleRepository;
 import com.mytravel.bottle.service.DriftBottleService;
 import com.mytravel.bottle.dto.SendBottleRequest;
 import com.mytravel.bottle.dto.BottleDetailResponse;
+import com.mytravel.message.MessageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +19,8 @@ import java.util.List;
 public class DriftBottleController {
 
     private final DriftBottleService bottleService;
+    private final DriftBottleRepository bottleRepository;
+    private final MessageService messageService;
 
     /** 发送漂流瓶 */
     @PostMapping("/send")
@@ -76,6 +80,13 @@ public class DriftBottleController {
     public ApiResponse<String> report(@PathVariable Long id,
                                        Authentication authentication) {
         bottleService.reportBottle(getUserId(authentication), id);
+        DriftBottle bottle = bottleRepository.findById(id).orElse(null);
+        if (bottle != null) {
+            messageService.send(bottle.getSenderId(), "BOTTLE_REPORTED",
+                    "您的漂流瓶被举报",
+                    "您发布的漂流瓶已被其他用户举报，正在重新审核中。",
+                    id);
+        }
         return ApiResponse.ok("已举报，等待审核处理");
     }
 

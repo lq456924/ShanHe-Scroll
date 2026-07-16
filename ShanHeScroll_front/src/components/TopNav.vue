@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { logout as apiLogout, updateProfile } from '@/api/user'
 import { useTheme } from '@/composables/useTheme'
+import MessageDropdown from '@/components/MessageDropdown.vue'
 import http, { extractData } from '@/api'
 
 const router = useRouter()
@@ -150,35 +151,39 @@ watch(() => route.path, () => {
       {{ theme === 'dark' ? '☀' : '☾' }}
     </button>
 
-    <!-- 右侧用户区 -->
-    <div class="user-area" @click="handleAvatarClick">
-      <span class="user-name">{{ isLoggedIn ? (user?.nickname || user?.username) : '未登录' }}</span>
-      <div class="user-avatar">
-        <img
-          v-if="isLoggedIn && user?.avatar"
-          :src="user.avatar"
-          class="avatar-img"
-          alt="头像"
-        />
-        <img
-          v-else
-          src="/default-avatar.svg"
-          class="avatar-img default"
-          alt="默认头像"
-        />
-      </div>
+    <!-- 右侧区域：消息图标 + 用户头像 -->
+    <div class="right-group">
+      <MessageDropdown v-if="isLoggedIn" />
 
-      <!-- 下拉菜单 -->
-      <Transition name="dropdown">
-        <div v-if="showDropdown && isLoggedIn" class="dropdown-menu" @click.stop>
-          <div class="dropdown-item" @click="goProfile">个人中心</div>
-          <div class="dropdown-item" @click="triggerUpload">修改头像</div>
-          <div v-if="user?.role >= 1" class="dropdown-divider"></div>
-          <div v-if="user?.role >= 1" class="dropdown-item admin" @click="goAdmin">🔧 管理面板</div>
-          <div class="dropdown-divider"></div>
-          <div class="dropdown-item danger" @click="handleLogout">退出登录</div>
+      <div class="user-area" @click="handleAvatarClick">
+        <span class="user-name">{{ isLoggedIn ? (user?.nickname || user?.username) : '未登录' }}</span>
+        <div class="user-avatar">
+          <img
+            v-if="isLoggedIn && user?.avatar"
+            :src="user.avatar"
+            class="avatar-img"
+            alt="头像"
+          />
+          <img
+            v-else
+            src="/default-avatar.svg"
+            class="avatar-img default"
+            alt="默认头像"
+          />
         </div>
-      </Transition>
+
+        <!-- 下拉菜单 -->
+        <Transition name="dropdown">
+          <div v-if="showDropdown && isLoggedIn" class="dropdown-menu" @click.stop>
+            <div class="dropdown-item" @click="goProfile">个人中心</div>
+            <div class="dropdown-item" @click="triggerUpload">修改头像</div>
+            <div v-if="user?.role >= 1" class="dropdown-divider"></div>
+            <div v-if="user?.role >= 1" class="dropdown-item admin" @click="goAdmin">🔧 管理面板</div>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-item danger" @click="handleLogout">退出登录</div>
+          </div>
+        </Transition>
+      </div>
     </div>
 
     <input
@@ -261,10 +266,17 @@ watch(() => route.path, () => {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* ---- 用户区 ---- */
-.user-area {
+/* ---- 右侧分组（消息图标 + 用户区） ---- */
+.right-group {
   position: absolute;
   right: 32px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ---- 用户区 ---- */
+.user-area {
   display: flex;
   align-items: center;
   gap: 10px;

@@ -17,6 +17,7 @@ export interface Album {
   description: string | null
   coverImage: string | null
   visibility: number
+  isShared: boolean
   createdAt: string
   updatedAt: string
   photos: AlbumPhoto[]
@@ -34,8 +35,20 @@ export function createAlbum(data: {
   title: string
   description?: string
   coverImage?: string
+  isShared?: boolean
+  inviteeIds?: number[]
 }) {
   return http.post<Album>('/album', data).then(extractData)
+}
+
+/** 同意加入共同相册 */
+export function acceptInvitation(albumId: number) {
+  return http.put(`/album/${albumId}/accept`).then(extractData)
+}
+
+/** 拒绝加入共同相册 */
+export function rejectInvitation(albumId: number) {
+  return http.put(`/album/${albumId}/reject`).then(extractData)
 }
 
 /** 相册详情（含全部照片） */

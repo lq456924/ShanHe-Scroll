@@ -1,10 +1,13 @@
 package com.mytravel.album;
 
+import com.mytravel.album.repository.AlbumMemberRepository;
 import com.mytravel.album.repository.AlbumRepository;
 import com.mytravel.album.repository.AlbumPhotoRepository;
 import com.mytravel.album.repository.AlbumVisibilityUserRepository;
 import com.mytravel.album.service.AlbumService;
 import com.mytravel.common.FileService;
+import com.mytravel.message.MessageService;
+import com.mytravel.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +34,15 @@ class AlbumServiceTest {
     private AlbumVisibilityUserRepository visibilityUserRepository;
 
     @Mock
+    private AlbumMemberRepository albumMemberRepository;
+
+    @Mock
+    private MessageService messageService;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
     private FileService fileService;
 
     private AlbumService albumService;
@@ -38,7 +50,8 @@ class AlbumServiceTest {
     @BeforeEach
     void setUp() {
         albumService = new AlbumService(albumRepository, albumPhotoRepository,
-                visibilityUserRepository, fileService);
+                visibilityUserRepository, albumMemberRepository, messageService,
+                userRepository, fileService);
     }
 
     // ---- 创建相册 ----
@@ -52,7 +65,7 @@ class AlbumServiceTest {
         });
 
         Album album = albumService.createAlbum(1L, 110000L, "北京之旅",
-                "一次难忘的旅行", "/uploads/cover.jpg");
+                "一次难忘的旅行", "/uploads/cover.jpg", false, null);
 
         assertEquals(1L, album.getId());
         assertEquals(0, album.getVisibility()); // 默认公开
@@ -61,7 +74,7 @@ class AlbumServiceTest {
     @Test
     void shouldRejectEmptyTitle() {
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
-                albumService.createAlbum(1L, 110000L, "", null, null));
+                albumService.createAlbum(1L, 110000L, "", null, null, false, null));
         assertTrue(ex.getMessage().contains("标题不能为空"));
     }
 
@@ -222,6 +235,7 @@ class AlbumServiceTest {
         verify(fileService).delete("/uploads/test.jpg");
         verify(albumPhotoRepository).deleteByAlbumId(1L);
         verify(visibilityUserRepository).deleteByAlbumId(1L);
+        verify(albumMemberRepository).deleteByAlbumId(1L);
         verify(albumRepository).delete(album);
     }
 

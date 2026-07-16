@@ -27,7 +27,8 @@ public class AlbumController {
         Long userId = getUserId(authentication);
         return ApiResponse.ok(albumService.createAlbum(
                 userId, request.getRegionId(), request.getTitle(),
-                request.getDescription(), request.getCoverImage()));
+                request.getDescription(), request.getCoverImage(),
+                request.getIsShared(), request.getInviteeIds()));
     }
 
     /** 我的相册列表 */
@@ -99,16 +100,32 @@ public class AlbumController {
         return ApiResponse.ok("照片已删除");
     }
 
+    // ==================== 共同相册：邀请响应 ====================
+
+    /** 同意加入共同相册 */
+    @PutMapping("/{albumId}/accept")
+    public ApiResponse<String> acceptInvitation(@PathVariable Long albumId,
+                                                 Authentication authentication) {
+        albumService.acceptInvitation(getUserId(authentication), albumId);
+        return ApiResponse.ok("已加入相册");
+    }
+
+    /** 拒绝加入共同相册 */
+    @PutMapping("/{albumId}/reject")
+    public ApiResponse<String> rejectInvitation(@PathVariable Long albumId,
+                                                 Authentication authentication) {
+        albumService.rejectInvitation(getUserId(authentication), albumId);
+        return ApiResponse.ok("已拒绝邀请");
+    }
+
     // ==================== 隐私设置 ====================
 
-    /** 查询相册隐私设置 */
     @GetMapping("/{id}/privacy")
     public ApiResponse<Album> getPrivacy(@PathVariable Long id,
                                          Authentication authentication) {
         return ApiResponse.ok(albumService.getPrivacy(getUserId(authentication), id));
     }
 
-    /** 设置单个相册隐私 */
     @PutMapping("/{id}/privacy")
     public ApiResponse<String> setPrivacy(@PathVariable Long id,
                                           @RequestBody UpdatePrivacyRequest request,
@@ -118,7 +135,6 @@ public class AlbumController {
         return ApiResponse.ok("隐私设置已更新");
     }
 
-    /** 一键设置所有相册隐私 */
     @PutMapping("/privacy/batch")
     public ApiResponse<String> setPrivacyBatch(@RequestBody UpdatePrivacyRequest request,
                                                Authentication authentication) {

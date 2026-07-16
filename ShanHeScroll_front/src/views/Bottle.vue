@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import http, { extractData } from '@/api'
-import { sendBottle, likeBottle, reportBottle } from '@/api/bottle'
+import { sendBottle, likeBottle, reportBottle, getBottleDetail } from '@/api/bottle'
+
+const route = useRoute()
+const router = useRouter()
 
 interface Bottle {
   id: number
@@ -23,6 +27,7 @@ const likingBottle = ref(false)
 const likedBottle = ref(false)
 const currentLikeCount = ref(0)
 const reportedBottle = ref(false)
+const isOwnBottle = ref(false) // 是否为查看自己的瓶子（从消息跳转）
 
 async function handleReport() {
   if (!pickedBottle.value || reportedBottle.value) return
@@ -183,8 +188,42 @@ async function pickBottle() {
 function closeBottle() {
   showBottle.value = false
   pickedBottle.value = null
+  isOwnBottle.value = false
+  // 清除 URL 中的 highlight 参数
+  if (route.query.highlight) {
+    router.replace({ path: '/bottle' })
+  }
 }
 
+/** 从消息跳转：根据 query.highlight 自动加载指定漂流瓶 */
+async function loadHighlightedBottle() {
+  const id = route.query.highlight
+  if (!id) return
+  const numId = Number(id)
+  if (isNaN(numId)) return
+
+  loading.value = true
+  try {
+    const res = await getBottleDetail(numId)
+    pickedBottle.value = res.bottle
+    showBottle.value = true
+    isOwnBottle.value = true
+    currentLikeCount.value = res.bottle?.likeCount || 0
+    likedBottle.value = res.liked
+  } catch {
+    // 瓶子不存在或无权查看，静默清除参数
+    router.replace({ path: '/bottle' })
+  }
+  loading.value = false
+}
+
+watch(() => route.query.highlight, () => {
+  loadHighlightedBottle()
+})
+
+onMounted(() => {
+  loadHighlightedBottle()
+})
 </script>
 
 <template>
@@ -308,7 +347,8 @@ function closeBottle() {
     <div v-if="showBottle && pickedBottle" class="bottle-modal" @click.self="closeBottle">
       <div class="bottle-message">
         <button class="bottle-close" @click="closeBottle">✕</button>
-        <div class="bottle-icon">🍾</div>
+        <div class="bottle-icon">{{ isOwnBottle ? '📬' : '🍾' }}</div>
+        <div v-if="isOwnBottle" class="bottle-label">我的漂流瓶</div>
         <div class="bottle-text">{{ pickedBottle.textContent }}</div>
         <img v-if="pickedBottle.imageUrl" :src="pickedBottle.imageUrl" class="bottle-img" alt="" />
         <div class="bottle-footer">
@@ -722,8 +762,20 @@ function closeBottle() {
 .bottle-icon {
   text-align: center;
   font-size: 48px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+}
+
+.bottle-label {
+  text-align: center;
+  font-size: 13px;
+  color: #8b7355;
+  font-weight: 600;
+  margin-bottom: 10px;
+  background: rgba(139,115,85,0.1);
+  display: inline-block;
+  padding: 2px 14px;
+  border-radius: 10px;
 }
 
 .bottle-text {

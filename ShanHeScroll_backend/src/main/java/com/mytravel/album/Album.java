@@ -37,6 +37,10 @@ public class Album {
     @Column(length = 500)
     private String coverImage;
 
+    /** 是否为多人共同相册 */
+    @Column(nullable = false)
+    private Boolean isShared = false;
+
     /** 可见性: 0=所有人可见  1=仅自己可见  2=白名单可见  3=黑名单不可见 */
     @Column(nullable = false)
     private Integer visibility = 0;

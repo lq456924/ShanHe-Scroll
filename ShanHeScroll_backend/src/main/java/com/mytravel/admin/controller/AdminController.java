@@ -1,9 +1,13 @@
 package com.mytravel.admin.controller;
 
 import com.mytravel.bottle.DriftBottle;
+import com.mytravel.bottle.repository.DriftBottleRepository;
 import com.mytravel.bottle.service.DriftBottleService;
 import com.mytravel.common.ApiResponse;
+import com.mytravel.message.MessageService;
+import com.mytravel.message.MessageRepository;
 import com.mytravel.travel.Attraction;
+import com.mytravel.travel.repository.AttractionRepository;
 import com.mytravel.travel.service.TravelService;
 import com.mytravel.admin.dto.CreateUserRequest;
 import com.mytravel.admin.dto.UpdateRoleRequest;
@@ -24,8 +28,12 @@ import java.util.List;
 public class AdminController {
 
     private final DriftBottleService bottleService;
+    private final DriftBottleRepository bottleRepository;
     private final TravelService travelService;
     private final UserRepository userRepository;
+    private final AttractionRepository attractionRepository;
+    private final MessageService messageService;
+    private final MessageRepository messageRepository;
     private final PasswordEncoder passwordEncoder;
 
     // ==================== 景点审核（审核员及以上） ====================
@@ -41,6 +49,13 @@ public class AdminController {
                                                   Authentication authentication) {
         requireReviewer(authentication);
         travelService.approveAttraction(id);
+        Attraction attr = attractionRepository.findById(id).orElse(null);
+        if (attr != null && attr.getSubmitterId() != null) {
+            messageService.send(attr.getSubmitterId(), "ATTRACTION_APPROVED",
+                    "打卡点「" + attr.getName() + "」审核通过",
+                    "您提交的打卡点已通过审核，现在对其他用户可见。",
+                    id);
+        }
         return ApiResponse.ok("审核通过");
     }
 
@@ -49,6 +64,13 @@ public class AdminController {
                                                  Authentication authentication) {
         requireReviewer(authentication);
         travelService.rejectAttraction(id);
+        Attraction attr = attractionRepository.findById(id).orElse(null);
+        if (attr != null && attr.getSubmitterId() != null) {
+            messageService.send(attr.getSubmitterId(), "ATTRACTION_REJECTED",
+                    "打卡点「" + attr.getName() + "」审核未通过",
+                    "您提交的打卡点未通过审核，请修改后重新提交。",
+                    id);
+        }
         return ApiResponse.ok("已拒绝");
     }
 
@@ -65,6 +87,16 @@ public class AdminController {
                                        Authentication authentication) {
         requireReviewer(authentication);
         bottleService.approveBottle(id);
+        DriftBottle bottle = bottleRepository.findById(id).orElse(null);
+        if (bottle != null && bottle.getSenderId() != null) {
+            boolean isReReview = messageRepository.existsByRelatedIdAndType(id, "BOTTLE_REPORTED");
+            String type = isReReview ? "BOTTLE_RE_APPROVED" : "BOTTLE_APPROVED";
+            String title = isReReview ? "漂流瓶重新审核通过" : "漂流瓶审核通过";
+            String content = isReReview
+                    ? "您的漂流瓶在被举报后经重新审核已通过。"
+                    : "您发布的漂流瓶已通过审核，现在可被其他用户拾取。";
+            messageService.send(bottle.getSenderId(), type, title, content, id);
+        }
         return ApiResponse.ok("审核通过");
     }
 
@@ -73,12 +105,21 @@ public class AdminController {
                                       Authentication authentication) {
         requireReviewer(authentication);
         bottleService.rejectBottle(id);
+        DriftBottle bottle = bottleRepository.findById(id).orElse(null);
+        if (bottle != null && bottle.getSenderId() != null) {
+            boolean isReReview = messageRepository.existsByRelatedIdAndType(id, "BOTTLE_REPORTED");
+            String type = isReReview ? "BOTTLE_RE_REJECTED" : "BOTTLE_REJECTED";
+            String title = isReReview ? "漂流瓶重新审核未通过" : "漂流瓶审核未通过";
+            String content = isReReview
+                    ? "您的漂流瓶在被举报后经重新审核仍未通过。"
+                    : "您发布的漂流瓶未通过审核，请检查内容后重新发布。";
+            messageService.send(bottle.getSenderId(), type, title, content, id);
+        }
         return ApiResponse.ok("已拒绝");
     }
 
     // ==================== 用户管理（仅管理员） ====================
 
-    /** 用户列表 */
     @GetMapping("/users")
     public ApiResponse<List<UserDto>> userList(Authentication authentication) {
         requireAdmin(authentication);
@@ -87,7 +128,6 @@ public class AdminController {
         return ApiResponse.ok(dtos);
     }
 
-    /** 创建用户（可指定角色） */
     @PostMapping("/users")
     public ApiResponse<UserDto> createUser(@RequestBody CreateUserRequest request,
                                            Authentication authentication) {
@@ -115,7 +155,6 @@ public class AdminController {
         return ApiResponse.ok(toDto(user));
     }
 
-    /** 重置用户密码 */
     @PutMapping("/users/{id}/reset-password")
     public ApiResponse<String> resetPassword(@PathVariable Long id,
                                              @RequestBody CreateUserRequest request,
@@ -135,7 +174,6 @@ public class AdminController {
         return ApiResponse.ok("密码已重置，该用户需重新登录");
     }
 
-    /** 修改用户角色（仅管理员，且目标用户不能是管理员） */
     @PutMapping("/users/{id}/role")
     public ApiResponse<String> setUserRole(@PathVariable Long id,
                                             @RequestBody UpdateRoleRequest request,
@@ -164,7 +202,6 @@ public class AdminController {
         return ApiResponse.ok("已将 " + user.getUsername() + " 从" + oldRole + "改为" + newRole);
     }
 
-    /** 封禁用户 */
     @PutMapping("/users/{id}/ban")
     public ApiResponse<String> banUser(@PathVariable Long id,
                                        Authentication authentication) {
@@ -177,10 +214,14 @@ public class AdminController {
         user.setStatus(1);
         user.setTokenVersion(user.getTokenVersion() == null ? 1 : user.getTokenVersion() + 1);
         userRepository.save(user);
+
+        messageService.send(id, "BAN",
+                "账号已被封禁",
+                "您的账号因违反平台规定已被封禁，如有疑问请联系管理员。",
+                null);
         return ApiResponse.ok("用户已封禁");
     }
 
-    /** 解封用户 */
     @PutMapping("/users/{id}/unban")
     public ApiResponse<String> unbanUser(@PathVariable Long id,
                                          Authentication authentication) {
@@ -189,10 +230,14 @@ public class AdminController {
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         user.setStatus(0);
         userRepository.save(user);
+
+        messageService.send(id, "UNBAN",
+                "账号已解封",
+                "您的账号已被解封，现在可以正常使用平台功能。",
+                null);
         return ApiResponse.ok("用户已解封");
     }
 
-    /** 删除用户（永久，不可恢复） */
     @DeleteMapping("/users/{id}")
     public ApiResponse<String> deleteUser(@PathVariable Long id,
                                           Authentication authentication) {
@@ -208,7 +253,6 @@ public class AdminController {
 
     // ==================== 权限校验 ====================
 
-    /** 审核员及以上：role >= 1 */
     private void requireReviewer(Authentication authentication) {
         User user = getCurrentUser(authentication);
         if (user.getRole() == null || user.getRole() < 1) {
@@ -216,7 +260,6 @@ public class AdminController {
         }
     }
 
-    /** 仅管理员：role == 2 */
     private void requireAdmin(Authentication authentication) {
         User user = getCurrentUser(authentication);
         if (user.getRole() == null || user.getRole() < 2) {
